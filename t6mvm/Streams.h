@@ -114,6 +114,7 @@ namespace Streams
 	inline static bool RecordingAsFFmpeg = false;
 	inline static bool RecordingAsAvi = false;
 	inline static bool IsFFmpegEncoding = false;
+	inline static bool FFmpegEncodeFailed = false;
 	static const char* newStreamFolder = "";
 	static string folderToDeleteWhenAborted = "";
 	inline static vector<IMVMStream*> FFmpegStreams{};
@@ -462,7 +463,10 @@ namespace Streams
 	{
 		if (abortingStreams == false)
 		{
-			WinToastHelper::send_toast_notification(L"T6MVM STREAMS FINISHED", L"Recording Complete!");
+			if (FFmpegEncodeFailed)
+				WinToastHelper::send_toast_notification(L"T6MVM FFMPEG FAILED", L"Encoding failed. Temporary frames and the log were kept.");
+			else
+				WinToastHelper::send_toast_notification(L"T6MVM STREAMS FINISHED", L"Recording Complete!");
 			if (Settings::Settings::PostStreamsActions["Notification"] == true && !Settings::Settings::AlertzyKey.empty())
 			{
 				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_INFO, false, "STREAMS", "Streams finished. Sending notification via Alertzy.");
@@ -506,12 +510,13 @@ namespace Streams
 			}
 			else
 			{
+				FFmpegEncodeFailed = true;
 				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "STREAMS", "FFmpeg failed for %s: %s", job.OutputPath.c_str(), error.c_str());
 			}
 		}
 		delete jobs;
-		IsFFmpegEncoding = false;
 		NotifyOnStreamsFinished();
+		IsFFmpegEncoding = false;
 		return 0;
 	}
 
@@ -778,6 +783,7 @@ namespace Streams
 		RecordingAsFFmpeg = useFFmpeg;
 		RecordingAsAvi = useAvi;
 		FFmpegStreams.clear();
+		FFmpegEncodeFailed = false;
 		T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_INFO, false, "STREAMS", "newStreamFolder: %s", newStreamFolder);
 		if(T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_tickStart) > -1)
 			T6SDK::Theater::Demo_JumpToTick(T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_tickStart));
