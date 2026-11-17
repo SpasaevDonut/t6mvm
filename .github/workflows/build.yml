@@ -1,0 +1,155 @@
+name: Build T6MVM
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  T6SDK_REPOSITORY: Amyst82/T6SDK
+  # Pin T6SDK: its master branch is a moving target and the addresses/API must
+  # stay compatible with the T6MVM revision being built.
+  T6SDK_REF: d5db363ed79786313159bfdcafe313e06b350b32
+  # Pin the single-header JSON dependency instead of downloading "latest".
+  JSON_REF: v3.11.3
+
+jobs:
+  build:
+    name: Windows x86 Release
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout T6MVM
+        uses: actions/checkout@v4
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Checkout T6SDK
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.T6SDK_REPOSITORY }}
+          ref: ${{ env.T6SDK_REF }}
+          path: deps/T6SDK
+          persist-credentials: false
+
+      - name: Prepare dependencies and build properties
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = $env:GITHUB_WORKSPACE
+          $jsonDir = Join-Path $root 'deps\json'
+          New-Item -ItemType Directory -Force -Path $jsonDir | Out-Null
+
+          $jsonUrl = "https://raw.githubusercontent.com/nlohmann/json/${{ env.JSON_REF }}/single_include/nlohmann/json.hpp"
+          $jsonPath = Join-Path $jsonDir 'json.hpp'
+          Invoke-WebRequest -Uri $jsonUrl -OutFile $jsonPath
+          if ((Get-Item $jsonPath).Length -lt 100000) {
+            throw 'json.hpp download is unexpectedly small.'
+          }
+
+          # The committed headers expect a json.hpp path outside the repo.
+          # Patch only the disposable CI checkout so the build is self-contained.
+          foreach ($relative in @('t6mvm\Common.h', 't6mvm\Settings.h')) {
+            $path = Join-Path $root $relative
+            $text = [System.IO.File]::ReadAllText($path)
+            if ($text -notmatch '\.\./\.\./\.\./\.\./Downloads/json\.hpp') {
+              throw "Expected the old json.hpp include in $relative."
+            }
+            $text = $text -replace '\.\./\.\./\.\./\.\./Downloads/json\.hpp', 'json.hpp'
+            [System.IO.File]::WriteAllText($path, $text)
+          }
+
+          # Directory.Build.props is discovered by MSBuild for the t6mvm
+          # project. It is generated here and intentionally not committed:
+          # the original project hard-codes a developer's T6SDK path.
+          $props = @(
+            '<Project>',
+            '  <PropertyGroup>',
+            '    <T6SDKRoot>$(MSBuildThisFileDirectory)..\deps\T6SDK</T6SDKRoot>',
+            '    <JsonDir>$(MSBuildThisFileDirectory)..\deps\json</JsonDir>',
+            '  </PropertyGroup>',
+            '  <ItemDefinitionGroup>',
+            '    <ClCompile>',
+            '      <AdditionalIncludeDirectories>$(T6SDKRoot)\T6SDK;$(JsonDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>',
+            '    </ClCompile>',
+            '    <Link>',
+            '      <AdditionalLibraryDirectories>$(T6SDKRoot)\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+            '      <AdditionalDependencies>windowscodecs.lib;psapi.lib;%(AdditionalDependencies)</AdditionalDependencies>',
+            '    </Link>',
+            '  </ItemDefinitionGroup>',
+            '</Project>'
+          ) -join [Environment]::NewLine
+          $propsPath = Join-Path $root 't6mvm\Directory.Build.props'
+          [System.IO.File]::WriteAllText($propsPath, $props + [Environment]::NewLine)
+
+          Write-Host 'Generated build properties:'
+          Get-Content -LiteralPath $propsPath | Write-Host
+
+      - name: Build T6SDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = $env:GITHUB_WORKSPACE
+          $msbuildArgs = @(
+            "$root\deps\T6SDK\T6SDK\T6SDK.vcxproj",
+            '/m',
+            '/nologo',
+            '/v:minimal',
+            '/p:Configuration=Release',
+            '/p:Platform=Win32',
+            "/p:OutDir=$root\deps\T6SDK\Release\",
+            "/p:IntDir=$root\obj\t6sdk\"
+          )
+          & msbuild @msbuildArgs
+          if ($LASTEXITCODE -ne 0) {
+            throw "T6SDK build failed with exit code $LASTEXITCODE."
+          }
+          if (!(Test-Path "$root\deps\T6SDK\Release\T6SDK.lib")) {
+            throw 'T6SDK.lib was not produced.'
+          }
+
+      - name: Build T6MVM
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = $env:GITHUB_WORKSPACE
+          New-Item -ItemType Directory -Force -Path "$root\artifacts" | Out-Null
+          $msbuildArgs = @(
+            "$root\t6mvm\t6mvm.vcxproj",
+            '/m',
+            '/nologo',
+            '/v:minimal',
+            '/p:Configuration=Release',
+            '/p:Platform=Win32',
+            "/p:SolutionDir=$root\",
+            "/p:OutDir=$root\artifacts\",
+            "/p:IntDir=$root\obj\t6mvm\",
+            '/p:PostBuildEventUseInBuild=false',
+            '/p:PreBuildEventUseInBuild=false'
+          )
+          & msbuild @msbuildArgs
+          if ($LASTEXITCODE -ne 0) {
+            throw "T6MVM build failed with exit code $LASTEXITCODE."
+          }
+          if (!(Test-Path "$root\artifacts\t6mvm.Red32n")) {
+            Get-ChildItem -Recurse "$root\artifacts" | Format-Table -AutoSize | Out-String | Write-Host
+            throw 't6mvm.Red32n was not produced.'
+          }
+          Get-Item "$root\artifacts\t6mvm.Red32n" | Format-List Name,Length,LastWriteTime
+
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: t6mvm-red32n-${{ github.sha }}
+          path: artifacts/t6mvm.Red32n
+          if-no-files-found: error
+          retention-days: 14
