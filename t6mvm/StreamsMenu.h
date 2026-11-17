@@ -18,6 +18,7 @@ namespace StreamsMenu
 			//std::string("mvm_streams_directory ") + std::string(T6SDK::Dvars::GetString(CustomDvars::dvar_streams_directory)) + ";\n" +
 			std::string("mvm_streams_fps ") + std::to_string(T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_fps)) + ";\n" +
 			std::string("mvm_streams_avi ") + std::to_string(T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_avi) ? 1 : 0) + ";\n" +
+			std::string("mvm_streams_ffmpeg ") + std::to_string(T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_ffmpeg) ? 1 : 0) + ";\n" +
 			std::string("mvm_streams_JPG ") + std::to_string(T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_JPG) ? 1 : 0) + ";\n" +
 			std::string("mvm_streams_tickStart ") + std::to_string(T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_tickStart)) + ";\n" +
 			std::string("mvm_streams_tickEnd ") + std::to_string(T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_tickEnd)) + ";\n" +
@@ -96,11 +97,53 @@ namespace StreamsMenu
 		}
 	}
 
+	void SelectFFmpegPath()
+	{
+		char openedFileName[MAX_PATH]{};
+		const TCHAR* filter = (const TCHAR*)"FFmpeg executable (ffmpeg.exe)\0ffmpeg.exe\0Executables (*.exe)\0*.exe\0All files (*.*)\0*.*\0";
+		const TCHAR* title = (const TCHAR*)"Select ffmpeg.exe";
+		if (!T6SDK::InternalFunctions::OpenFileDialog((TCHAR*)openedFileName, false, filter, title))
+		{
+			T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_WARNING, false, "STREAMS", "FFmpeg path selection cancelled.");
+			return;
+		}
+
+		std::string path(openedFileName);
+		std::error_code ec;
+		if (!std::filesystem::is_regular_file(path, ec) || ec)
+		{
+			T6SDK::Theater::Demo_Error("FFmpeg not found!", "The selected ffmpeg.exe does not exist.");
+			return;
+		}
+
+		Settings::Settings::SetFFmpegPath(path);
+		T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_INFO, false, "STREAMS", "FFmpeg path set to: %s", path.c_str());
+	}
+
+	void OnAviModeChanged(bool checked)
+	{
+		if (checked)
+		{
+			CustomDvars::dvar_streams_ffmpeg->current.enabled = false;
+			CustomDvars::dvar_streams_ffmpeg->modified = true;
+		}
+	}
+
+	void OnFFmpegModeChanged(bool checked)
+	{
+		if (checked)
+		{
+			CustomDvars::dvar_streams_avi->current.enabled = false;
+			CustomDvars::dvar_streams_avi->modified = true;
+		}
+	}
+
 	static void Draw()
 	{
 		if (!*UIControls::StreamsTabButton.isChecked)
 			return;
 		bool streamsEnabled = T6SDK::Dvars::GetBool(CustomDvars::dvar_streams);
+		bool ffmpegEnabled = CustomDvars::dvar_streams_ffmpeg->current.enabled;
 		UIControls::UI_ToggleStreamsCheckBox.Draw();
 
 		if(Settings::Settings::StreamsDirectory.empty())
@@ -156,7 +199,7 @@ namespace StreamsMenu
 		T6SDK::Drawing::DrawTextAbsolute("^9MISC SETTINGS", coords2.x, coords2.y, 1.0f, T6SDK::Drawing::T_WHITECOLOR, T6SDK::AnchorPoint::Center, 0x00);
 		//End draw misc settings category text
 
-		UIControls::UI_StreamsJPGCheckBox.Draw(streamsEnabled && !T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_avi));
+		UIControls::UI_StreamsJPGCheckBox.Draw(streamsEnabled && !ffmpegEnabled && !T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_avi));
 
 		T6SDK::Dvars::SetInt(CustomDvars::dvar_streams_fps, streamsAvailableFPS[selectedFPS]);
 		char buffer[100];
@@ -164,9 +207,18 @@ namespace StreamsMenu
 		UIControls::UI_StreamsFPSEnum.Text = buffer;
 		UIControls::UI_StreamsFPSEnum.Draw(streamsEnabled);
 
-		UIControls::UI_StreamsAVICheckBox.Draw(streamsEnabled);
+		UIControls::UI_StreamsAVICheckBox.Draw(streamsEnabled && !ffmpegEnabled);
+		UIControls::UI_StreamsFFmpegCheckBox.Draw(streamsEnabled);
 		UIControls::UI_StreamsNoFlashCheckBox.Draw(streamsEnabled);
 		UIControls::UI_RecordCamCheckBox.Draw(streamsEnabled);
+
+		static std::string ffmpegPathText;
+		if (Settings::Settings::FFmpegPath.empty())
+			ffmpegPathText = "^1FFMPEG: NOT SET";
+		else
+			ffmpegPathText = "^9FFMPEG: ^3" + Settings::Settings::FFmpegPath;
+		UIControls::UI_StreamsFFmpegPathButton.Text = ffmpegPathText.c_str();
+		UIControls::UI_StreamsFFmpegPathButton.Draw(streamsEnabled);
 
 		//Draw stream passes
 
@@ -226,13 +278,19 @@ namespace StreamsMenu
 		UIControls::UI_StreamsJPGCheckBox = T6SDK::Drawing::UI_CheckBoxButton("IMAGE FORMAT: PNG", "IMAGE FORMAT: JPG", 4, 16, T6SDK::AnchorPoint::TopLeft, &CustomDvars::dvar_streams_JPG->current.enabled, 0x00);
 		UIControls::UI_StreamsJPGCheckBox.ToolTip = "^7Switch between ^5PNG ^7and ^5JPG ^7formats. PNG provides better quality. JPG takes less space.";
 
-		UIControls::UI_StreamsAVICheckBox = T6SDK::Drawing::UI_CheckBoxButton("TYPE: IMAGE SEQUENCE", "TYPE: AVI", 4, 18, T6SDK::AnchorPoint::TopLeft, &CustomDvars::dvar_streams_avi->current.enabled, 0x00);
+		UIControls::UI_StreamsAVICheckBox = T6SDK::Drawing::UI_CheckBoxButton("TYPE: IMAGE SEQUENCE", "TYPE: AVI", 4, 18, T6SDK::AnchorPoint::TopLeft, &CustomDvars::dvar_streams_avi->current.enabled, std::function<void(bool)>(OnAviModeChanged));
 		UIControls::UI_StreamsAVICheckBox.ToolTip = "^7Record as ^5IMAGE SEQUENCE ^7or ^5AVI ^7file.";
 
-		UIControls::UI_StreamsNoFlashCheckBox = T6SDK::Drawing::UI_CheckBoxButton("NO FLASH OFF", "NO FLASH ON (DOESN'T CAPTURE RESHADE)", 4, 20, T6SDK::AnchorPoint::TopLeft, &CustomDvars::dvar_streams_noFlash->current.enabled, 0x00);
+		UIControls::UI_StreamsFFmpegCheckBox = T6SDK::Drawing::UI_CheckBoxButton("FFMPEG MP4 OFF", "FFMPEG MP4 ON", 4, 20, T6SDK::AnchorPoint::TopLeft, &CustomDvars::dvar_streams_ffmpeg->current.enabled, std::function<void(bool)>(OnFFmpegModeChanged));
+		UIControls::UI_StreamsFFmpegCheckBox.ToolTip = "^7Encode recorded frames to a compressed ^5H.264 MP4 ^7with FFmpeg. Requires ^3ffmpeg.exe ^7below.";
+
+		UIControls::UI_StreamsFFmpegPathButton = T6SDK::Drawing::UI_ClickableButton("FFMPEG: NOT SET", 4, 32, T6SDK::AnchorPoint::TopLeft, (uintptr_t)&SelectFFmpegPath);
+		UIControls::UI_StreamsFFmpegPathButton.ToolTip = "Select ffmpeg.exe. FFmpeg must include the libx264 encoder.";
+
+		UIControls::UI_StreamsNoFlashCheckBox = T6SDK::Drawing::UI_CheckBoxButton("NO FLASH OFF", "NO FLASH ON (DOESN'T CAPTURE RESHADE)", 4, 22, T6SDK::AnchorPoint::TopLeft, &CustomDvars::dvar_streams_noFlash->current.enabled, 0x00);
 		UIControls::UI_StreamsNoFlashCheckBox.ToolTip = "Don't want to see you screen flashing during recording each pass? Turn this on!";
 
-		UIControls::UI_RecordCamCheckBox = T6SDK::Drawing::UI_CheckBoxButton("RECORD CAMERA DATA\tOFF", "RECORD CAMERA DATA\tON", 4, 22, T6SDK::AnchorPoint::TopLeft, &CustomDvars::dvar_streams_recordCam->current.enabled, 0x00);
+		UIControls::UI_RecordCamCheckBox = T6SDK::Drawing::UI_CheckBoxButton("RECORD CAMERA DATA\tOFF", "RECORD CAMERA DATA\tON", 4, 24, T6SDK::AnchorPoint::TopLeft, &CustomDvars::dvar_streams_recordCam->current.enabled, 0x00);
 		UIControls::UI_RecordCamCheckBox.ToolTip = "^7Get camera orientation and position data exported for each recorded frame.";
 
 		UIControls::UI_StreamsDirectoryButton = T6SDK::Drawing::UI_ClickableButton("Directory is not set", 4, 30, T6SDK::AnchorPoint::TopLeft, (uintptr_t)&SetStreamsDirectory);

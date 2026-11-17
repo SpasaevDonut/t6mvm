@@ -14,6 +14,7 @@
 #include <filesystem>
 #include "LocalAddresses.h"
 #include "ScreenGrab.h"
+#include "FFmpegEncoder.h"
 #include <cassert>
 #include "..\MinHook\MinHook.h"
 #pragma comment(lib, "libMinHook.x86.lib")
@@ -110,8 +111,22 @@ namespace Streams
 	bool FreeBufferRequested = false;
 	string filename = "";
 	inline static bool IsStreamsRunning = false;
+	inline static bool RecordingAsFFmpeg = false;
+	inline static bool RecordingAsAvi = false;
+	inline static bool IsFFmpegEncoding = false;
 	static const char* newStreamFolder = "";
 	static string folderToDeleteWhenAborted = "";
+	inline static vector<IMVMStream*> FFmpegStreams{};
+
+	inline static bool IsFFmpegMode()
+	{
+		return CustomDvars::dvar_streams_ffmpeg && CustomDvars::dvar_streams_ffmpeg->current.enabled;
+	}
+
+	inline static bool IsAviMode()
+	{
+		return CustomDvars::dvar_streams_avi && CustomDvars::dvar_streams_avi->current.enabled && !IsFFmpegMode();
+	}
 
 	inline static vector<IMVMStream*> Streams{};
 	inline static Stream_Default Default;
@@ -211,8 +226,8 @@ namespace Streams
 			vec2_t coords = T6SDK::Drawing::GetGridCellCoords(8, 19);
 			T6SDK::Drawing::DrawTextAbsolute(buffer0, coords.x, coords.y, 1.5f, T6SDK::Drawing::WHITECOLOR, T6SDK::AnchorPoint::Center, 0x00);
 
-			char formatBuffer1[64];
-			sprintf(formatBuffer1, "%s", T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_avi) ? "Recording as ^3AVI" : T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_JPG) ? "Recording as ^3JPG ^7sequence" : "Recording as ^3PNG ^7sequence");
+			char formatBuffer1[96];
+			sprintf(formatBuffer1, "%s", RecordingAsFFmpeg ? "Recording as ^3FFMPEG MP4 ^7(temporary ^3JPG ^7frames)" : RecordingAsAvi ? "Recording as ^3AVI" : T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_JPG) ? "Recording as ^3JPG ^7sequence" : "Recording as ^3PNG ^7sequence");
 			
 			vec2_t coords2 = T6SDK::Drawing::GetGridCellCoords(8, 21);
 			T6SDK::Drawing::DrawTextAbsolute(formatBuffer1, coords2.x, coords2.y, 1.0f, T6SDK::Drawing::WHITECOLOR, T6SDK::AnchorPoint::Center, 0x00);
@@ -266,7 +281,7 @@ namespace Streams
 
 		if (ScreenshotRequested)
 		{
-			if (T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_avi))
+			if (RecordingAsAvi)
 			{
 				ID3D11Texture2D* backBuffer;
 				HRESULT hr = p_swap_chain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<LPVOID*>(&backBuffer));
@@ -293,7 +308,8 @@ namespace Streams
 
 				p_context->CopyResource(texture_to_save, backBuffer);
 
-				DirectX::SaveWICTextureToFile(p_context, texture_to_save, T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_JPG) ? GUID_ContainerFormatJpeg : GUID_ContainerFormatPng, std::wstring(filename.begin(), filename.end()).c_str(), NULL, NULL, true);
+				const bool useJpg = RecordingAsFFmpeg || T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_JPG);
+				DirectX::SaveWICTextureToFile(p_context, texture_to_save, useJpg ? GUID_ContainerFormatJpeg : GUID_ContainerFormatPng, std::wstring(filename.begin(), filename.end()).c_str(), NULL, NULL, true);
 				ScreenshotRequested = false;
 				backBuffer->Release();
 				texture_to_save->Release();
@@ -431,7 +447,8 @@ namespace Streams
 	void CaptureScreenshot(IMVMStream* currentStream)
 	{
 		char formatBuffer[32];
-		sprintf(formatBuffer, "%s",T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_JPG) ? "JPG" : "PNG");
+		const bool useJpg = RecordingAsFFmpeg || T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_JPG);
+		sprintf(formatBuffer, "%s", useJpg ? "JPG" : "PNG");
 		char buffer[512];
 		sprintf(buffer, "%s\\%s_%i.%s", currentStream->Dir.c_str(), currentStream->Name, frameCount, formatBuffer);
 		filename = currentStream->Dir+ "\\" +currentStream->Name+"_"+std::to_string(frameCount)+"."+formatBuffer;
@@ -477,6 +494,27 @@ namespace Streams
 			}
 		}
 	}
+	static DWORD WINAPI FinishFFmpegStreamsThread(LPVOID param)
+	{
+		auto* jobs = static_cast<std::vector<FFmpeg::EncodeJob>*>(param);
+		for (const auto& job : *jobs)
+		{
+			std::string error;
+			if (FFmpeg::EncodeSequence(job, error))
+			{
+				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_SUCCESS, false, "STREAMS", "Encoded MP4: %s", job.OutputPath.c_str());
+			}
+			else
+			{
+				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "STREAMS", "FFmpeg failed for %s: %s", job.OutputPath.c_str(), error.c_str());
+			}
+		}
+		delete jobs;
+		IsFFmpegEncoding = false;
+		NotifyOnStreamsFinished();
+		return 0;
+	}
+
 	inline static void StopStreams()
 	{
 		if (!T6SDK::Dvars::GetBool(CustomDvars::dvar_streams))
@@ -486,33 +524,75 @@ namespace Streams
 		IsAnyOtherStream = false;
 		LocalAddresses::h_TickIncreasing.UnHook();
 		IsStreamsRunning = false;
-		if (frameCount > 0)
-		{
-			CreateThread(nullptr, 0, (LPTHREAD_START_ROUTINE)NotifyOnStreamsFinished, nullptr, 0, nullptr);
-		}
+
+		const int framesCaptured = frameCount;
 		frameCount = 0;
 		T6SDK::Addresses::DemoPlayback.Value()->DemoHudHidden = false;
 		IsStreamsStarted = false;
 		/*if(T6SDK::Dvars::GetBool(CustomDvars::dvar_frozenCam))
 			T6SDK::Dvars::SetFloat(*T6SDK::Dvars::DvarList::timescale, 1.0f);*/
-		if (CustomDvars::dvar_streams_avi->current.enabled)
+
+		for (auto& stream : Streams)
 		{
-			for (auto& stream : Streams)
+			if (stream->gmav)
 			{
-				if (stream->toggle->current.enabled)
-				{
-					if (stream->gmav)
-					{
-						gmav_finish(stream->gmav);
-						stream->gmav = 0x00;
-					}
-				}
+				gmav_finish(stream->gmav);
+				stream->gmav = 0x00;
 			}
 		}
 		if (ExportCameraFile.is_open())
 		{
 			ExportCameraFile.close();
 		}
+
+		std::vector<FFmpeg::EncodeJob>* jobs = nullptr;
+		if (RecordingAsFFmpeg && !abortingStreams && framesCaptured > 0 && !FFmpegStreams.empty())
+		{
+			jobs = new std::vector<FFmpeg::EncodeJob>();
+			for (auto* stream : FFmpegStreams)
+			{
+				if (!stream || stream->Dir.empty())
+					continue;
+
+				FFmpeg::EncodeJob job{};
+				job.Executable = Settings::Settings::FFmpegPath;
+				job.InputPattern = stream->Dir + "\\" + stream->Name + "_%d.JPG";
+				job.OutputPath = folderToDeleteWhenAborted + "\\" + stream->Name + ".mp4";
+				job.FrameDirectory = stream->Dir;
+				job.FPS = T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_fps);
+				jobs->push_back(job);
+			}
+			if (jobs->empty())
+			{
+				delete jobs;
+				jobs = nullptr;
+			}
+		}
+
+		if (!abortingStreams && framesCaptured > 0)
+		{
+			if (jobs)
+			{
+				IsFFmpegEncoding = true;
+				HANDLE thread = CreateThread(nullptr, 0, &FinishFFmpegStreamsThread, jobs, 0, nullptr);
+				if (thread)
+					CloseHandle(thread);
+				else
+					FinishFFmpegStreamsThread(jobs);
+			}
+			else
+			{
+				CreateThread(nullptr, 0, (LPTHREAD_START_ROUTINE)NotifyOnStreamsFinished, nullptr, 0, nullptr);
+			}
+		}
+		else if (jobs)
+		{
+			delete jobs;
+		}
+
+		FFmpegStreams.clear();
+		RecordingAsFFmpeg = false;
+		RecordingAsAvi = false;
 	}
 
 	int StreamsPassesEnabled = 0;
@@ -655,6 +735,26 @@ namespace Streams
 	{
 		if (!T6SDK::Dvars::GetBool(CustomDvars::dvar_streams))
 			return;
+
+		if (IsFFmpegEncoding)
+		{
+			T6SDK::Theater::Demo_Error("FFmpeg is still encoding!", "Wait for the previous MP4 to finish before starting a new recording.");
+			return;
+		}
+
+		const bool useFFmpeg = IsFFmpegMode();
+		const bool useAvi = !useFFmpeg && CustomDvars::dvar_streams_avi->current.enabled;
+		if (useFFmpeg)
+		{
+			std::error_code ec;
+			if (Settings::Settings::FFmpegPath.empty() ||
+				!std::filesystem::is_regular_file(Settings::Settings::FFmpegPath, ec) || ec)
+			{
+				T6SDK::Theater::Demo_Error("FFmpeg is not configured!", "Select ffmpeg.exe in the Streams tab before recording.");
+				return;
+			}
+		}
+
 		//Creating a new directory for streams
 		if (Settings::Settings::StreamsDirectory.empty())
 		{
@@ -675,34 +775,73 @@ namespace Streams
 		StreamsCommon::CapturePreviousSsao();
 		newStreamFolder = streamsDirectory;
 		folderToDeleteWhenAborted = string(streamsDirectory);
+		RecordingAsFFmpeg = useFFmpeg;
+		RecordingAsAvi = useAvi;
+		FFmpegStreams.clear();
 		T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_INFO, false, "STREAMS", "newStreamFolder: %s", newStreamFolder);
 		if(T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_tickStart) > -1)
 			T6SDK::Theater::Demo_JumpToTick(T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_tickStart));
 		T6SDK::Addresses::DemoPlayback.Value()->DemoHudHidden = true;
 		CustomDvars::dvar_greenScreen->current.enabled = false;
-		//Create directories for screenshots or avi files for each enabled pass
+
+		//Create output directories/files for each enabled pass.
+		bool anyEnabled = false;
 		for (auto& stream : Streams)
 		{
 			stream->Disable();
-			if (stream->toggle->current.enabled)
+			if (!stream->toggle->current.enabled)
+				continue;
+			anyEnabled = true;
+
+			if (RecordingAsFFmpeg)
 			{
-				if (CustomDvars::dvar_streams_avi->current.enabled)
+				char buffer[512];
+				sprintf(buffer, "%s\\%s", newStreamFolder, stream->Name);
+				if (!T6SDK::InternalFunctions::CreateNewDirectory(buffer))
 				{
-					char buffer[256];
-					sprintf(buffer, "%s\\%s.avi", newStreamFolder, stream->Name);
-					std::string aviPath(buffer);
-					stream->gmav = gmav_open(aviPath.c_str(), T6SDK::Addresses::ScreenWidth.Value(), T6SDK::Addresses::ScreenHeight.Value(), T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_fps));
+					T6SDK::Theater::Demo_Error("Error occured!", "Failed to create a temporary frame directory for FFmpeg!");
+					T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "STREAMS", "Failed to create FFmpeg frame directory: %s", buffer);
+					FFmpegStreams.clear();
+					RecordingAsFFmpeg = false;
+					RecordingAsAvi = false;
+					return;
 				}
-				else
-				{
-					char buffer[256];
-					sprintf(buffer, "%s\\%s", newStreamFolder, stream->Name);
-					T6SDK::InternalFunctions::CreateNewDirectory(buffer);
-					//strcpy(stream->Dir, buffer);
-					stream->Dir = buffer;
-					T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_INFO, false, "STREAMS", "New stream directory for %s", stream->Dir.c_str());
-				}
+				stream->Dir = buffer;
+				FFmpegStreams.push_back(stream);
 			}
+			else if (RecordingAsAvi)
+			{
+				char buffer[256];
+				sprintf(buffer, "%s\\%s.avi", newStreamFolder, stream->Name);
+				std::string aviPath(buffer);
+				stream->gmav = gmav_open(aviPath.c_str(), T6SDK::Addresses::ScreenWidth.Value(), T6SDK::Addresses::ScreenHeight.Value(), T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_fps));
+			}
+			else
+			{
+				char buffer[256];
+				sprintf(buffer, "%s\\%s", newStreamFolder, stream->Name);
+				T6SDK::InternalFunctions::CreateNewDirectory(buffer);
+				stream->Dir = buffer;
+				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_INFO, false, "STREAMS", "New stream directory for %s", stream->Dir.c_str());
+			}
+		}
+
+		//If every pass is disabled, Update() falls back to the Default stream.
+		if (RecordingAsFFmpeg && !anyEnabled)
+		{
+			char buffer[512];
+			sprintf(buffer, "%s\\%s", newStreamFolder, Default.Name);
+			if (!T6SDK::InternalFunctions::CreateNewDirectory(buffer))
+			{
+				T6SDK::Theater::Demo_Error("Error occured!", "Failed to create a temporary frame directory for FFmpeg!");
+				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "STREAMS", "Failed to create FFmpeg frame directory: %s", buffer);
+				FFmpegStreams.clear();
+				RecordingAsFFmpeg = false;
+				RecordingAsAvi = false;
+				return;
+			}
+			Default.Dir = buffer;
+			FFmpegStreams.push_back(&Default);
 		}
 
 		if (T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_recordCam))

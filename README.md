@@ -15,6 +15,7 @@ Here're some of the project's best features:
 *   Weapon camo & animations replacement
 *   Holdgun
 *   Custom sliders
+*   FFmpeg MP4 encoding (H.264)
 <p id="description"> </p>
 <h2>🛠️ Installation</h2>
 
@@ -33,6 +34,7 @@ Here're some of the project's best features:
 * Always check for errors in console
 * Please consider to skip back at least once when demo is loaded to avoid tick mismatches and let <b>timeline</b> and other components work properly.
 * In case your mouse scroll wheel is broken use <b>mvm_cameraRoll</b> and <b>mvm_cameraFov</b> commands during setting dolly camera markers.
+* To record MP4 files, select your <b>ffmpeg.exe</b> in the Streams tab and enable <b>FFMPEG MP4</b>. The FFmpeg build must include the <b>libx264</b> encoder. FFmpeg mode records temporary JPG frames, encodes them to H.264 MP4 after recording, and deletes the frames on success.
 
 <p id="description"> </p>
 
@@ -110,6 +112,7 @@ Here're some of the project's best features:
 | `mvm_streams_fps`             | int    | `50`     | `1000`    | `50`      | Recording FPS. |
 | `mvm_streams_JPG`             | bool   | -        | -         | `false`   | Record streams as JPG. |
 | `mvm_streams_avi`             | bool   | -        | -         | `false`   | Record streams as AVI. |
+| `mvm_streams_ffmpeg`          | bool   | -        | -         | `false`   | Encode recorded passes to H.264 MP4 with the FFmpeg executable selected in the Streams tab. |
 | `mvm_streams_tickStart`       | int    | `-1`     | `99999999`| `-1`      | Start tick for recording. |
 | `mvm_streams_tickEnd`         | int    | `-1`     | `99999999`| `-1`      | End tick for recording. |
 | `mvm_streams_recordCam`       | bool   | -        | -         | `false`   | Record camera data per frame. |

@@ -31,6 +31,7 @@ namespace Settings
 			{std::string("OpenStreamsFolder"), true} 
 		};
 		inline static std::string StreamsDirectory{};
+		inline static std::string FFmpegPath{};
 
 		inline static bool Notification_proxy = false;
 		inline static bool OpenStreamsFolder_proxy = false;
@@ -41,6 +42,7 @@ namespace Settings
 		static void SetDemosDirectory(std::string& directory);
 		static std::string GetDemosDirectory();
 		static void SetStreamsDirectory(std::string& directory);
+		static void SetFFmpegPath(std::string& path);
 		static void SetKeyBind(std::string& key, int& bind);
 		static void SetPostStreamsAction(std::string& action, bool& value);
 
@@ -57,6 +59,6 @@ namespace Settings
 				return ""; // Return empty or handle error
 			}
 		}
-		NLOHMANN_DEFINE_TYPE_INTRUSIVE(Settings, AlertzyKey, DemosDirectoryMp, DemosDirectoryZm, KeyBinds, PostStreamsActions, StreamsDirectory)
+		NLOHMANN_DEFINE_TYPE_INTRUSIVE(Settings, AlertzyKey, DemosDirectoryMp, DemosDirectoryZm, KeyBinds, PostStreamsActions, StreamsDirectory, FFmpegPath)
 	};
 }
