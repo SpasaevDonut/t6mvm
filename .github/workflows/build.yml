@@ -28,13 +28,13 @@ jobs:
 
     steps:
       - name: Checkout T6MVM
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up MSBuild
-        uses: microsoft/setup-msbuild@v2
+        uses: microsoft/setup-msbuild@v3
 
       - name: Checkout T6SDK
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: ${{ env.T6SDK_REPOSITORY }}
           ref: ${{ env.T6SDK_REF }}
@@ -79,6 +79,7 @@ jobs:
             '  </PropertyGroup>',
             '  <ItemDefinitionGroup>',
             '    <ClCompile>',
+            '      <PreprocessorDefinitions>_HAS_STD_BYTE=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>',
             '      <AdditionalIncludeDirectories>$(T6SDKRoot)\T6SDK;$(JsonDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>',
             '    </ClCompile>',
             '    <Link>',
@@ -91,8 +92,24 @@ jobs:
           $propsPath = Join-Path $root 't6mvm\Directory.Build.props'
           [System.IO.File]::WriteAllText($propsPath, $props + [Environment]::NewLine)
 
+          # T6SDK's ConsoleLog.h injects `using namespace std;`, which makes
+          # MSVC's std::byte collide with the Windows SDK's global `byte`
+          # typedef in oaidl.h/objidl.h. Disable std::byte for this build.
+          $sdkProps = @(
+            '<Project>',
+            '  <ItemDefinitionGroup>',
+            '    <ClCompile>',
+            '      <PreprocessorDefinitions>_HAS_STD_BYTE=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>',
+            '    </ClCompile>',
+            '  </ItemDefinitionGroup>',
+            '</Project>'
+          ) -join [Environment]::NewLine
+          $sdkPropsPath = Join-Path $root 'deps\T6SDK\Directory.Build.props'
+          [System.IO.File]::WriteAllText($sdkPropsPath, $sdkProps + [Environment]::NewLine)
+
           Write-Host 'Generated build properties:'
           Get-Content -LiteralPath $propsPath | Write-Host
+          Get-Content -LiteralPath $sdkPropsPath | Write-Host
 
       - name: Build T6SDK
         shell: pwsh
@@ -147,7 +164,7 @@ jobs:
           Get-Item "$root\artifacts\t6mvm.Red32n" | Format-List Name,Length,LastWriteTime
 
       - name: Upload plugin
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: t6mvm-red32n-${{ github.sha }}
           path: artifacts/t6mvm.Red32n
