@@ -302,6 +302,7 @@
     <ClInclude Include="ScreenGrab.h" />
     <ClInclude Include="FFmpegEncoder.h" />
     <ClInclude Include="Trace.h" />
+    <ClInclude Include="SafeDemo.h" />
     <ClInclude Include="Settings.h" />
     <ClInclude Include="SettingsMenu.h" />
     <ClInclude Include="Shake.h" />
