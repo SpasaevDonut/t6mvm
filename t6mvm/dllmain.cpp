@@ -57,6 +57,21 @@ DWORD WINAPI mainThread(LPVOID param)
     return 0;
 }
 
+// Redacted's plugin loader rejects (and unloads) a plugin without these
+// exports. T6MVM's actual initialization remains in the DllMain worker thread;
+// these entry points only keep the module resident.
+extern "C" __declspec(dllexport) void PreInit()
+{
+}
+
+extern "C" __declspec(dllexport) void PostInit()
+{
+}
+
+extern "C" __declspec(dllexport) void Uninit()
+{
+}
+
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved)
 {
     switch (ul_reason_for_call)
