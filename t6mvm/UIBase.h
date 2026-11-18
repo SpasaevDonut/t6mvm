@@ -16,7 +16,6 @@
 #include "DemoBrowserMenu.h"
 #include "CustomSlidersMenu.h"
 #include "SettingsMenu.h"
-#include "Trace.h"
 
 namespace UIBase
 {
@@ -191,31 +190,10 @@ namespace UIBase
 			{
 				if (T6SDK::MAIN::ENABLED && T6SDK::Addresses::GameMode.Value() == 32)
 				{
-					static int onlineTrace = 0;
-					if (onlineTrace < 1)
-					{
-						T6MVM_Trace::Write("online block entered");
-						onlineTrace = 1;
-					}
 					if(!DemoBrowserMenu::isShown && !SettingsMenu::IsSettingsMenuOpen)
 					{
-						if (onlineTrace < 2)
-						{
-							T6MVM_Trace::Write("draw browse check begin");
-							onlineTrace = 2;
-						}
 						UIControls::UI_DemoBrowseCheckButton.Draw();
-						if (onlineTrace < 3)
-						{
-							T6MVM_Trace::Write("draw browse check done");
-							onlineTrace = 3;
-						}
 						UIControls::UI_OpenDemoBrowserButton.Draw();
-						if (onlineTrace < 4)
-						{
-							T6MVM_Trace::Write("draw open browser done");
-							onlineTrace = 4;
-						}
 					}
 					if (CustomDvars::dvar_demos_directory->modified)
 					{
@@ -223,11 +201,6 @@ namespace UIBase
 						CustomDvars::dvar_demos_directory->modified = false;
 					}
 					DemoBrowserMenu::Draw();
-					if (onlineTrace < 5)
-					{
-						T6MVM_Trace::Write("DemoBrowserMenu::Draw done");
-						onlineTrace = 5;
-					}
 
 				}
 			}
@@ -255,21 +228,16 @@ namespace UIBase
 	}
 	void OnSunInited()
 	{
-		T6MVM_Trace::Write("OnDemoPlaybackInited start");
 		SunMenu::Init();
-		T6MVM_Trace::Write("SunMenu::Init done");
 		FogMenu::Init();
-		T6MVM_Trace::Write("FogMenu::Init done");
 	}
 	inline static void Init()
 	{
-		T6MVM_Trace::Write("UIBase::Init start");
 		T6SDK::Events::RegisterListener(T6SDK::EventType::OnEndFrameDrawn, (uintptr_t)&OnEndFrameDrawn);
 		T6SDK::Events::RegisterListener(T6SDK::EventType::OnKeyPressed, (uintptr_t)&OnKeyPressed);
 		T6SDK::Events::RegisterListener(T6SDK::EventType::OnDemoPlaybackInited, (uintptr_t)&OnSunInited);
 		//Init buttons and sliders here
 		UIControls::Init();
-		T6MVM_Trace::Write("UIControls::Init done");
 		MainMenu::Init();
 		CameraMenu::Init();
 		MiscMenu::Init();
@@ -277,9 +245,7 @@ namespace UIBase
 		SsaoMenu::Init();
 		DofMenu::Init();
 		LightsMenu::Init();
-		T6MVM_Trace::Write("before StreamsMenu::Init");
 		StreamsMenu::Init();
-		T6MVM_Trace::Write("after StreamsMenu::Init");
 		WeaponMenu::Init();
 		CustomSlidersMenu::Init();
 		WeaponAnimationChangerMenu::Init();

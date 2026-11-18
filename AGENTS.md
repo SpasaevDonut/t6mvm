@@ -99,7 +99,7 @@ ask first).
 ### Startup
 
 ```text
-DllMain(DLL_PROCESS_ATTACH)
+Redacted loader -> PreInit
   -> CreateThread(mainThread)
   -> Sleep(5000)
   -> T6SDK::MAIN::PreInit()
@@ -120,12 +120,17 @@ DllMain(DLL_PROCESS_ATTACH)
 `T6SDK::MAIN::DEBUG = true` is set in `Init()`. Do not turn on debug behavior
 or extra per-frame logging for a production change.
 
+`DllMain` only tracks attach/detach. The Redacted loader calls the exported
+`PreInit`, which starts the worker thread. `DllMain` does not start it, so a
+loader rejection cannot leave a worker thread running after the module is
+unmapped.
+
 The Redacted plugin loader requires the full plugin entry-point set:
 `PreInit`, `PostInit`, `Uninit`, `AuthorInfo`, `ExtendedInfo`, `OfficialMod`,
 `DependencyCount`, `GetDependency`, and `SendMessageB`. A missing export makes
-the loader unload the module; the DllMain worker thread would then run after
-the module is unmapped. `dllmain.cpp` keeps the set as no-op exports and still
-performs initialization from the DllMain worker thread.
+the loader unload the module; the worker thread would then run after
+the module is unmapped. `dllmain.cpp` keeps the set as no-op exports; `PreInit` starts the worker
+thread that performs initialization.
 
 ### Event-driven behavior
 
@@ -337,6 +342,10 @@ terms.
   notifications for recoverable problems.
 - Treat inline assembly/naked functions as load-bearing. Preserve registers,
   flags, and the original call/jump sequence if you touch them.
+- Do not put C++ statements, locals, or conditionals inside a
+  `__declspec(naked)` function. MSVC 14.44 can spill a temporary to `[ebp-4]`
+  while EBP holds the game's register, causing an access violation. Keep the
+  naked function asm-only and call a normal helper for the C++ work.
 
 ### 5.4 UI additions
 
@@ -476,6 +485,15 @@ Path rules:
 - Validate `IsInTheater()`, mode, and null pointers before acting.
 - Log success/failure; do not silently return if the user invoked a command.
 - Do not re-register the command every time a menu opens.
+
+### Read demo brief data
+
+Use `T6MVM_SafeDemo::Get` instead of `T6SDK::DemoHandler::GetDemoBriefData`.
+T6SDK's `ReadDemoCreateDate` writes an 8-byte value through a 4-byte `int`,
+and its tag parsers read fixed offsets without size checks. The T6MVM wrapper
+checks file sizes, decodes the create date safely, and catches parser
+exceptions. `Common::LoadAllDemos` also skips `.demo` files without a matching
+`.summary`.
 
 ### Add a demo/bookmark field
 

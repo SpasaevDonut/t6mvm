@@ -1,5 +1,4 @@
 #pragma once
-#include "Trace.h"
 #include "SafeDemo.h"
 #include "StdInclude.h"
 #include "UIControls.h"
@@ -218,23 +217,18 @@ namespace Common
 		else if(T6SDK::CrossVersion::GetGameVersion() == T6SDK::CrossVersion::GameVersion::V41)
 			redactedPath = Settings::Settings::DemosDirectoryZm;
 
-		T6MVM_Trace::Write("LoadAllDemos dir %s", redactedPath.c_str());
 		auto list = T6SDK::InternalFunctions::find_files_by_extension(redactedPath, ".demo");
-		T6MVM_Trace::Write("LoadAllDemos found %i", (int)list.size());
 		T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_INFO, false, "T6MVM", "Found demos: %i", list.size());
 		Common::LocalDemos.clear();
 		for (auto& file : list)
 		{
-			T6MVM_Trace::Write("LoadAllDemos file %s", file.string().c_str());
 			std::error_code summaryError;
 			if (!std::filesystem::exists(file.string() + ".summary", summaryError) || summaryError)
 			{
-				T6MVM_Trace::Write("LoadAllDemos skip incomplete %s", file.string().c_str());
 				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_WARNING, false, "T6MVM", "Skipping incomplete demo: %s", file.string().c_str());
 				continue;
 			}
 			T6SDK::DemoBriefData data = T6MVM_SafeDemo::Get(file.string());
-			T6MVM_Trace::Write("LoadAllDemos read %s", file.string().c_str());
 			if (data.DemoPath.empty())
 				continue;
 			Common::LocalDemos.push_back(data);

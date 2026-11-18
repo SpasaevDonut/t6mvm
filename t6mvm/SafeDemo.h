@@ -1,6 +1,5 @@
 #pragma once
 #include <StdInclude.h>
-#include "Trace.h"
 
 namespace T6MVM_SafeDemo
 {
@@ -14,7 +13,6 @@ namespace T6MVM_SafeDemo
 		std::vector<uint8_t> thumbnail = T6SDK::InternalFunctions::readBytesSimple(demoPath + ".thumbnail");
 		if (tags.size() < 0x58 || thumbnail.size() < 0xEB)
 		{
-			T6MVM_Trace::Write("demo data too small %s", demoPath.c_str());
 			return empty;
 		}
 
@@ -37,12 +35,10 @@ namespace T6MVM_SafeDemo
 			std::string description = T6SDK::DemoHandler::ReadDemoDescription(thumbnail);
 			std::string metadata = T6SDK::DemoHandler::ReadDemoMetadata(tags);
 			bool hasMetadata = !metadata.empty();
-			T6MVM_Trace::Write("demo parsed %s", demoPath.c_str());
 			return T6SDK::DemoBriefData(path, map, mapUi, mapFriendly, gameMode, duration, createDate, author, name, description, hasMetadata, metadata);
 		}
 		catch (const std::exception& e)
 		{
-			T6MVM_Trace::Write("demo parse exception %s: %s", demoPath.c_str(), e.what());
 			return empty;
 		}
 	}
