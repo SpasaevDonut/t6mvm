@@ -157,6 +157,7 @@ namespace UIControls
 	inline static T6SDK::Drawing::UI_ClickableButton UI_StreamsFFmpegPathButton{};
 	inline static T6SDK::Drawing::UI_CheckBoxButton UI_StreamsNoFlashCheckBox{};
 	inline static T6SDK::Drawing::UI_CheckBoxButton UI_RecordCamCheckBox{};
+	inline static T6SDK::Drawing::UI_CheckBoxButton UI_StreamsAutoOpenFolderCheckBox{};
 
 	//FFMPEG controls
 	inline static T6SDK::Drawing::UI_EnumButton UI_FFmpegCodecEnum{};
