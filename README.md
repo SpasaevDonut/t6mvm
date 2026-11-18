@@ -34,7 +34,7 @@ Here're some of the project's best features:
 * Always check for errors in console
 * Please consider to skip back at least once when demo is loaded to avoid tick mismatches and let <b>timeline</b> and other components work properly.
 * In case your mouse scroll wheel is broken use <b>mvm_cameraRoll</b> and <b>mvm_cameraFov</b> commands during setting dolly camera markers.
-* To encode video files, select your <b>ffmpeg.exe</b> in the Streams tab and enable <b>FFMPEG MP4</b>. The FFmpeg build must include the encoder for the codec you pick (default <b>libx264</b>). FFmpeg mode records temporary JPG frames, encodes them after recording, and deletes the frames on success.
+* To encode video files, select your <b>ffmpeg.exe</b> in the Streams tab and enable <b>FFMPEG VIDEO</b>. The FFmpeg build must include the encoder for the codec you pick (default <b>libx264</b>). FFmpeg mode captures each frame, encodes it to JPEG in memory, and pipes it straight into a dedicated FFmpeg process per pass — no temporary image files are written to disk. Each pass encodes in parallel; if a codec cannot keep up, excess frames are dropped to bound memory.
 * The <b>FFMPEG</b> tab selects the codec (H.264, H.265, ProRes, UtVideo, AV1, VP9), quality (CRF), speed preset, pixel format, output container, faststart, and arbitrary extra arguments. Defaults reproduce the original H.264/CRF 18/veryfast/MP4 output. Choose a container compatible with your codec (e.g. WEBM for VP9); ProRes and UtVideo are lossless so quality/preset are ignored.
 
 <p id="description"> </p>
