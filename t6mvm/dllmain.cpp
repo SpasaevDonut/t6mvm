@@ -100,8 +100,9 @@ extern "C" __declspec(dllexport) const char* GetDependency(int index)
     return nullptr;
 }
 
-extern "C" __declspec(dllexport) void SendMessageB(const char* pluginName, const char* message)
+extern "C" __declspec(dllexport) int SendMessageB()
 {
+    return 1;
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved)
