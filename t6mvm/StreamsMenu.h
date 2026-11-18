@@ -244,6 +244,10 @@ namespace StreamsMenu
 	}
 	void OnTheaterControlsDrawn()
 	{
+		// The recording/encoding splashes own grid row 19; don't stack the
+		// "start recording" hint on top of them.
+		if (Streams::IsStreamsRunning || Streams::IsFFmpegEncoding)
+			return;
 		if (T6SDK::Dvars::GetBool(CustomDvars::dvar_streams) && !Settings::Settings::StreamsDirectory.empty())
 		{
 			int enabledStreamsCount = 0;
