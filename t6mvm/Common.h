@@ -209,6 +209,46 @@ namespace Common
 		}
 	}
 
+	static T6SDK::DemoBriefData GetDemoBriefDataSafe(const std::string& demoPath)
+	{
+		T6SDK::DemoBriefData empty;
+		std::vector<uint8_t> tags = T6SDK::InternalFunctions::readBytesSimple(demoPath + ".tags");
+		std::vector<uint8_t> thumbnail = T6SDK::InternalFunctions::readBytesSimple(demoPath + ".thumbnail");
+		if (tags.size() < 0x58 || thumbnail.size() < 0xEB)
+		{
+			T6MVM_Trace::Write("demo data too small %s", demoPath.c_str());
+			return empty;
+		}
+
+		try
+		{
+			int duration = T6SDK::DemoHandler::ReadDemoDuration(thumbnail);
+			uint64_t rawDate = 0;
+			for (int i = 0; i < 8; ++i)
+				rawDate |= (uint64_t)thumbnail[0xE3 + i] << (i * 8);
+			uint64_t seconds = rawDate / 2048;
+			int createDate = seconds > 0x7FFFFFFF ? 0 : (int)seconds;
+
+			std::string path = demoPath;
+			std::string map = T6SDK::DemoHandler::ReadMapName(tags);
+			std::string mapUi = T6SDK::DemoHandler::ReadMapMenuSelectMaterial(tags);
+			std::string mapFriendly = T6SDK::DemoHandler::ReadMapFriendlyName(tags);
+			std::string gameMode = T6SDK::DemoHandler::ReadDemoGameMode(tags);
+			std::string author = T6SDK::DemoHandler::ReadDemoAuthor(thumbnail);
+			std::string name = T6SDK::DemoHandler::ReadDemoName(thumbnail);
+			std::string description = T6SDK::DemoHandler::ReadDemoDescription(thumbnail);
+			std::string metadata = T6SDK::DemoHandler::ReadDemoMetadata(tags);
+			bool hasMetadata = !metadata.empty();
+			T6MVM_Trace::Write("demo parsed %s", demoPath.c_str());
+			return T6SDK::DemoBriefData(path, map, mapUi, mapFriendly, gameMode, duration, createDate, author, name, description, hasMetadata, metadata);
+		}
+		catch (const std::exception& e)
+		{
+			T6MVM_Trace::Write("demo parse exception %s: %s", demoPath.c_str(), e.what());
+			return empty;
+		}
+	}
+
 	static void LoadAllDemos()
 	{
 		std::string redactedPath;
@@ -232,13 +272,7 @@ namespace Common
 				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_WARNING, false, "T6MVM", "Skipping incomplete demo: %s", file.string().c_str());
 				continue;
 			}
-			T6SDK::DemoBriefData data;
-			if (!T6SDK::DemoHandler::TryGetDemoBriefData(file.string().c_str(), &data))
-			{
-				T6MVM_Trace::Write("LoadAllDemos parse failed %s", file.string().c_str());
-				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_WARNING, false, "T6MVM", "Skipping demo that failed to parse: %s", file.string().c_str());
-				continue;
-			}
+			T6SDK::DemoBriefData data = GetDemoBriefDataSafe(file.string());
 			T6MVM_Trace::Write("LoadAllDemos read %s", file.string().c_str());
 			if (data.DemoPath.empty())
 				continue;
