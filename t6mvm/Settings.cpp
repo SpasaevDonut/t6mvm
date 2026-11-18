@@ -19,6 +19,7 @@ namespace Settings
 			Settings::PostStreamsActions["Notification"] = Settings::Notification_proxy;
 			j["PostStreamsAction"] = Settings::PostStreamsActions;
 			j["StreamsDirectory"] = Settings::StreamsDirectory;
+			j["FFmpegPath"] = Settings::FFmpegPath;
 			file << j.dump(4, 32, false, nlohmann::json::error_handler_t::replace); // Pretty print with 4 spaces
 			file.close();
 			T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_SUCCESS, false, "T6MVM SETTINGS", "Settings saved!");
@@ -68,6 +69,7 @@ namespace Settings
 			T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_DEBUG, false, "T6MVM SETTINGS", "Notification: %s", Settings::PostStreamsActions["Notification"] ? "Enabled" : "Disabled");
 			T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_DEBUG, false, "T6MVM SETTINGS", "OpenStreamsFolder: %s", Settings::PostStreamsActions["OpenStreamsFolder"] ? "Enabled" : "Disabled");
 			Settings::StreamsDirectory = data.value("StreamsDirectory", "");
+			Settings::FFmpegPath = data.value("FFmpegPath", "");
 			T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_SUCCESS, false, "T6MVM SETTINGS", "Settings loaded!");
 		}
 	}
@@ -92,6 +94,12 @@ namespace Settings
 	{
 		T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_INFO, false, "T6MVM SETTINGS", "Setting streams directory...");
 		Settings::StreamsDirectory = path;
+		Save();
+	}
+	void Settings::SetFFmpegPath(std::string& path)
+	{
+		T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_INFO, false, "T6MVM SETTINGS", "Setting FFmpeg path...");
+		Settings::FFmpegPath = path;
 		Save();
 	}
 	void Settings::SetKeyBind(std::string& path, int& key)

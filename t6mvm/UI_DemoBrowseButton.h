@@ -1,6 +1,7 @@
 #pragma once
 #include "StdInclude.h"
 #include <ocidl.h>
+#include "SafeDemo.h"
 
 namespace UIDemoBrowseButtonNS
 {
@@ -121,7 +122,8 @@ namespace UIDemoBrowseButtonNS
 						if (successStatus)
 						{
 							fileopen.close();
-							if (T6SDK::DemoHandler::TryGetDemoBriefData(str.c_str(), &Common::CurrentLoadedDemo))
+							Common::CurrentLoadedDemo = T6MVM_SafeDemo::Get(str);
+							if (!Common::CurrentLoadedDemo.DemoPath.empty())
 							{
 								T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_DEBUG, false, "DEMO", "BriefData obtained! GameMode: %s", Common::CurrentLoadedDemo.GameMode.c_str());
 							}

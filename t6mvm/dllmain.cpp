@@ -47,14 +47,66 @@ void Init()
     T6SDK::Events::RegisterListener(T6SDK::EventType::OnGameLoaded, (uintptr_t)&OnGameLoaded);
 }
 HANDLE hThread;
+inline static bool initialized = false;
 
 DWORD WINAPI mainThread(LPVOID param)
 {
     Sleep(5000);
     Init();
+    initialized = true;
     SuspendThread(hThread);
     CloseHandle(hThread);
     return 0;
+}
+
+// Redacted's plugin loader rejects (and unloads) a plugin that does not export
+// this whole entry-point set. PreInit starts T6MVM's worker thread; these
+// entry points keep the module resident and satisfy the loader.
+extern "C" __declspec(dllexport) int PreInit()
+{
+    if (!hThread)
+        hThread = CreateThread(nullptr, 0, &mainThread, nullptr, 0, nullptr);
+    return 1;
+}
+
+extern "C" __declspec(dllexport) int PostInit()
+{
+    return 1;
+}
+
+extern "C" __declspec(dllexport) int Uninit()
+{
+    return 1;
+}
+
+extern "C" __declspec(dllexport) const char* AuthorInfo()
+{
+    return "T6MVM";
+}
+
+extern "C" __declspec(dllexport) const char* ExtendedInfo()
+{
+    return "T6MVM";
+}
+
+extern "C" __declspec(dllexport) int OfficialMod()
+{
+    return 0;
+}
+
+extern "C" __declspec(dllexport) int DependencyCount()
+{
+    return 0;
+}
+
+extern "C" __declspec(dllexport) const char* GetDependency(int index)
+{
+    return nullptr;
+}
+
+extern "C" __declspec(dllexport) int SendMessageB()
+{
+    return 1;
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved)
@@ -62,10 +114,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
     switch (ul_reason_for_call)
     {
     case DLL_PROCESS_ATTACH:
-        hThread = CreateThread(nullptr, 0, &mainThread, nullptr, 0, nullptr);
         break;
     case DLL_PROCESS_DETACH:
-        T6SDK::MAIN::DeInitialize();
+        if (initialized)
+            T6SDK::MAIN::DeInitialize();
         break;
     }
     return TRUE;

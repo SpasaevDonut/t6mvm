@@ -66,6 +66,7 @@ namespace CustomDvars
 	static dvar_s* dvar_streams_fps;
 	static dvar_s* dvar_streams_JPG;
 	static dvar_s* dvar_streams_avi;
+	static dvar_s* dvar_streams_ffmpeg;
 	static dvar_s* dvar_streams_tickStart;
 	static dvar_s* dvar_streams_tickEnd;
 	static dvar_s* dvar_streams_recordCam;
@@ -160,6 +161,7 @@ namespace CustomDvars
 		//dvar_streams_directory = T6SDK::Dvars::RegisterString("mvm_streams_directory", "", "Directory where streams will be saved.");
 		dvar_streams_fps = T6SDK::Dvars::RegisterInt("mvm_streams_fps", 50, 50, 1000, "Streams recording frame rate.");
 		dvar_streams_avi = T6SDK::Dvars::RegisterBool("mvm_streams_avi", false, "Streams recording AVI format.");
+		dvar_streams_ffmpeg = T6SDK::Dvars::RegisterBool("mvm_streams_ffmpeg", false, "Encode streams to H.264 MP4 with FFmpeg.");
 		dvar_streams_JPG = T6SDK::Dvars::RegisterBool("mvm_streams_JPG", false, "Record streams in JPG format.");
 		dvar_streams_tickStart = T6SDK::Dvars::RegisterInt("mvm_streams_tickStart", -1, -1, 99999999, "Streams recording tick start value.");
 		dvar_streams_tickEnd = T6SDK::Dvars::RegisterInt("mvm_streams_tickEnd", -1, -1, 99999999, "Streams recording tick end value.");

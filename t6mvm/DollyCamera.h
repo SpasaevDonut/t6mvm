@@ -160,31 +160,14 @@ namespace Camera
 		static void Update()
 		{
 			if (!T6SDK::Theater::IsInTheater())
-			{
-				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "DOLLYCAMERA", "Not in theater");
 				return;
-			}
 
 			if (T6SDK::Addresses::DemoPlayback.Value()->CameraMode != T6SDK::DemoCameraMode::FREECAM)
-			{
-				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "DOLLYCAMERA", "Not in free camera mode");
 				return;
-			}
 			if (T6SDK::Addresses::DemoPlayback.Value()->FreeCameraMode != T6SDK::DemoFreeCameraMode::DOLLY)
-			{
-				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "DOLLYCAMERA", "Not in dollycam mode");
 				return;
-			}
-			if (T6SDK::Addresses::DemoPlayback.Value()->DollyCamMarkerCount == 0)
-			{
-				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "DOLLYCAMERA", "Zero markers found");
+			if (T6SDK::Addresses::DemoPlayback.Value()->DollyCamMarkerCount == 0 || InterpoldatedValues.size() == 0)
 				return;
-			}
-			if(InterpoldatedValues.size() == 0)
-			{
-				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "DOLLYCAMERA", "InterpoldatedValues is empty");
-				return;
-			}
 
 			if (T6SDK::Dvars::GetBool(CustomDvars::dvar_shakePreview) && T6SDK::Addresses::IsDemoPaused.Value() == 1)
 			{
@@ -326,7 +309,6 @@ namespace Camera
 			CheckDollyCamDvars();
 			if (T6SDK::Addresses::DemoPlayback.Value()->FreeCameraMode == T6SDK::DemoFreeCameraMode::DOLLY) //If camera mode is DollyCam
 			{
-				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_INFO, true, "DOLLYCAMERA", "Updating camera");
 				Update();
 			}
 			else if (T6SDK::Addresses::DemoPlayback.Value()->FreeCameraMode == T6SDK::DemoFreeCameraMode::FREEROAM || T6SDK::Addresses::DemoPlayback.Value()->FreeCameraMode == T6SDK::DemoFreeCameraMode::EDIT)
@@ -340,7 +322,17 @@ namespace Camera
 		}
 		bool frozenCam = false;
 		bool notPovMode = false;
+		int tickChangedEnabled = 0;
 		uintptr_t eaxTMP, ecxTMP, edxTMP, esiTMP, ediTMP, espTMP, ebpTMP;
+
+		int PrepareTickChanged()
+		{
+			if (!T6SDK::MAIN::ENABLED)
+				return 0;
+			frozenCam = T6SDK::Dvars::GetBool(CustomDvars::dvar_frozenCam);
+			notPovMode = T6SDK::Addresses::DemoPlayback.Value()->CameraMode != T6SDK::DemoCameraMode::NONE;
+			return 1;
+		}
 
 		char testText[256];
 		uintptr_t textAddr;
@@ -433,58 +425,42 @@ namespace Camera
 				mov[ediTMP], edi
 				mov[espTMP], esp
 				mov[ebpTMP], ebp
-			}
-			if (T6SDK::MAIN::ENABLED)
-			{
-				frozenCam = T6SDK::Dvars::GetBool(CustomDvars::dvar_frozenCam);
-				notPovMode = T6SDK::Addresses::DemoPlayback.Value()->CameraMode != T6SDK::DemoCameraMode::NONE;
-				__asm
-				{
-					mov eax, [eaxTMP]
-					mov edx, [edxTMP]
-					mov ecx, [ecxTMP]
-					mov esi, [esiTMP]
-					mov edi, [ediTMP]
-					mov esp, [espTMP]
-					mov ebp, [ebpTMP]
-					//Route pointer of main tick to a fake one so the game will be paused
-					mov al, frozenCam
-					cmp al, 1
-					je L7
-					mov[esi + 0x4808C], ebp
-					mov al, notPovMode
-					cmp al, 0
-					je L7
-					mov[esi + 0x4809C], ebp
-					L7 :
-					mov[esi + 0x480A4], ebp
-					call HandleOnTickChanged
-					mov eax, [eaxTMP]
-					mov edx, [edxTMP]
-					mov ecx, [ecxTMP]
-					mov esi, [esiTMP]
-					mov edi, [ediTMP]
-					mov esp, [espTMP]
-					mov ebp, [ebpTMP]
-					jmp[T6SDK::Addresses::HookAddresses::h_TickChanged.JumpBackAddress]
-				}
-			}
-			else
-			{
-				__asm
-				{
-					mov eax, [eaxTMP]
-					mov edx, [edxTMP]
-					mov ecx, [ecxTMP]
-					mov esi, [esiTMP]
-					mov edi, [ediTMP]
-					mov esp, [espTMP]
-					mov ebp, [ebpTMP]
-					mov[esi + 0x4808C], ebp
-					jmp[T6SDK::Addresses::HookAddresses::h_TickChanged.JumpBackAddress]
-				}
+				call PrepareTickChanged
+				mov[tickChangedEnabled], eax
+				mov eax, [eaxTMP]
+				mov edx, [edxTMP]
+				mov ecx, [ecxTMP]
+				mov esi, [esiTMP]
+				mov edi, [ediTMP]
+				mov esp, [espTMP]
+				mov ebp, [ebpTMP]
+				cmp [tickChangedEnabled], 0
+				je TickChangedDisabled
+				mov al, frozenCam
+				cmp al, 1
+				je TickChangedWrite
+				mov[esi + 0x4808C], ebp
+				mov al, notPovMode
+				cmp al, 0
+				je TickChangedWrite
+				mov[esi + 0x4809C], ebp
+			TickChangedWrite:
+				mov[esi + 0x480A4], ebp
+				call HandleOnTickChanged
+				mov eax, [eaxTMP]
+				mov edx, [edxTMP]
+				mov ecx, [ecxTMP]
+				mov esi, [esiTMP]
+				mov edi, [ediTMP]
+				mov esp, [espTMP]
+				mov ebp, [ebpTMP]
+				jmp[T6SDK::Addresses::HookAddresses::h_TickChanged.JumpBackAddress]
+			TickChangedDisabled:
+				mov[esi + 0x4808C], ebp
+				jmp[T6SDK::Addresses::HookAddresses::h_TickChanged.JumpBackAddress]
 			}
 		}
+
 		static void GoToFirstMarker()
 		{
 			if (T6SDK::Dvars::GetBool(CustomDvars::dvar_frozenCam))

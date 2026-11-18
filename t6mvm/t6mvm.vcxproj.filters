@@ -144,6 +144,12 @@
     <ClInclude Include="ScreenGrab.h">
       <Filter>DX11</Filter>
     </ClInclude>
+    <ClInclude Include="FFmpegEncoder.h">
+      <Filter>Components\Streams</Filter>
+    </ClInclude>
+    <ClInclude Include="SafeDemo.h">
+      <Filter>Components\Streams</Filter>
+    </ClInclude>
     <ClInclude Include="Depth.h">
       <Filter>Components\Streams</Filter>
     </ClInclude>

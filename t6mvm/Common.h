@@ -1,4 +1,5 @@
 #pragma once
+#include "SafeDemo.h"
 #include "StdInclude.h"
 #include "UIControls.h"
 #include "Settings.h"
@@ -221,7 +222,13 @@ namespace Common
 		Common::LocalDemos.clear();
 		for (auto& file : list)
 		{
-			T6SDK::DemoBriefData data = T6SDK::DemoHandler::GetDemoBriefData(file.string().c_str());
+			std::error_code summaryError;
+			if (!std::filesystem::exists(file.string() + ".summary", summaryError) || summaryError)
+			{
+				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_WARNING, false, "T6MVM", "Skipping incomplete demo: %s", file.string().c_str());
+				continue;
+			}
+			T6SDK::DemoBriefData data = T6MVM_SafeDemo::Get(file.string());
 			if (data.DemoPath.empty())
 				continue;
 			Common::LocalDemos.push_back(data);
