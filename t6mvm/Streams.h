@@ -393,6 +393,8 @@ namespace Streams
 	inline static bool CaptureCycleActive = false;
 	inline static bool TickAdvanceReady = false;
 	inline static bool CycleUsesOnlyFallback = false;
+	inline static bool ScreenshotRequested = false;
+	inline static int tickStep = 0;
 	inline static int tickDelta = 0;
 	static void FinishCapturePass();
 
@@ -423,6 +425,7 @@ namespace Streams
 		}
 
 
+		ScreenshotRequested = CaptureCycleActive && Phase == CapturePhase::Capture;
 		if (CaptureCycleActive && Phase == CapturePhase::Settle)
 		{
 			// This Present used the pass state applied by ApplyCapturePass. The
@@ -1014,7 +1017,6 @@ namespace Streams
 	}
 
 	uintptr_t eaxTMP, ecxTMP, edxTMP, esiTMP, ediTMP, espTMP, ebpTMP;
-	int tickStep = 0;
 	int tickIncreasingEnabled = 0;
 
 	int PrepareTickIncreasing()
