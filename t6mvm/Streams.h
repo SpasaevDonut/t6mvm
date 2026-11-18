@@ -413,14 +413,17 @@ namespace Streams
 			else
 				HRES = p_present(p_swap_chain, sync_interval, flags);
 		}
+		// Skip the real Present only on the frame being captured, so that frame
+		// stays in the backbuffer. Other frames are presented: this is what makes
+		// the progress overlay visible and stops it from leaking into captures.
+		const bool skipPresentForCapture = T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_noFlash)
+			&& IsAnyOtherStream
+			&& CaptureCycleActive
+			&& Phase == CapturePhase::Capture;
+
 		if (StreamShouldIgnoreReshade == false)
 		{
-			if (T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_noFlash))
-			{
-				if (!IsAnyOtherStream)
-					HRES = p_present(p_swap_chain, sync_interval, flags);
-			}
-			else
+			if (!skipPresentForCapture)
 				HRES = p_present(p_swap_chain, sync_interval, flags);
 		}
 
@@ -533,12 +536,7 @@ namespace Streams
 
 		if (StreamShouldIgnoreReshade == true)
 		{
-			if (T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_noFlash))
-			{
-				if (!IsAnyOtherStream)
-					HRES = p_present(p_swap_chain, sync_interval, flags);
-			}
-			else
+			if (!skipPresentForCapture)
 				HRES = p_present(p_swap_chain, sync_interval, flags);
 		}
 
