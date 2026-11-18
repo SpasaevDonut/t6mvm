@@ -71,6 +71,15 @@ namespace CustomDvars
 	static dvar_s* dvar_streams_tickEnd;
 	static dvar_s* dvar_streams_recordCam;
 
+	//FFMPEG DVARS
+	static dvar_s* dvar_ffmpeg_codec;
+	static dvar_s* dvar_ffmpeg_quality;
+	static dvar_s* dvar_ffmpeg_preset;
+	static dvar_s* dvar_ffmpeg_pixelFormat;
+	static dvar_s* dvar_ffmpeg_container;
+	static dvar_s* dvar_ffmpeg_faststart;
+	static dvar_s* dvar_ffmpeg_extraArgs;
+
 	//WEAPONS DVARS
 	static dvar_s* dvar_camoChanging;
 	static dvar_s* dvar_primaryCamo;
@@ -161,12 +170,20 @@ namespace CustomDvars
 		//dvar_streams_directory = T6SDK::Dvars::RegisterString("mvm_streams_directory", "", "Directory where streams will be saved.");
 		dvar_streams_fps = T6SDK::Dvars::RegisterInt("mvm_streams_fps", 50, 50, 1000, "Streams recording frame rate.");
 		dvar_streams_avi = T6SDK::Dvars::RegisterBool("mvm_streams_avi", false, "Streams recording AVI format.");
-		dvar_streams_ffmpeg = T6SDK::Dvars::RegisterBool("mvm_streams_ffmpeg", false, "Encode streams to H.264 MP4 with FFmpeg.");
+		dvar_streams_ffmpeg = T6SDK::Dvars::RegisterBool("mvm_streams_ffmpeg", false, "Encode streams with FFmpeg using the configured codec and container.");
 		dvar_streams_JPG = T6SDK::Dvars::RegisterBool("mvm_streams_JPG", false, "Record streams in JPG format.");
 		dvar_streams_tickStart = T6SDK::Dvars::RegisterInt("mvm_streams_tickStart", -1, -1, 99999999, "Streams recording tick start value.");
 		dvar_streams_tickEnd = T6SDK::Dvars::RegisterInt("mvm_streams_tickEnd", -1, -1, 99999999, "Streams recording tick end value.");
 		dvar_streams_recordCam = T6SDK::Dvars::RegisterBool("mvm_streams_recordCam", false, "Collect camera data on each recorded frame.");
 
+		//Register ffmpeg dvars
+		dvar_ffmpeg_codec = T6SDK::Dvars::RegisterInt("mvm_ffmpeg_codec", 0, 0, 5, "FFmpeg video codec (0=H.264, 1=H.265, 2=ProRes, 3=UtVideo, 4=AV1, 5=VP9).");
+		dvar_ffmpeg_quality = T6SDK::Dvars::RegisterFloat("mvm_ffmpeg_quality", 18.0f, 0.0f, 51.0f, "FFmpeg quality (CRF). Lower is better. Ignored by ProRes and UtVideo.");
+		dvar_ffmpeg_preset = T6SDK::Dvars::RegisterInt("mvm_ffmpeg_preset", 1, 0, 4, "FFmpeg encoding speed preset (0=ultrafast, 4=veryslow).");
+		dvar_ffmpeg_pixelFormat = T6SDK::Dvars::RegisterInt("mvm_ffmpeg_pixelFormat", 0, 0, 4, "FFmpeg pixel format (0=yuv420p, 4=yuv422p10le).");
+		dvar_ffmpeg_container = T6SDK::Dvars::RegisterInt("mvm_ffmpeg_container", 0, 0, 4, "FFmpeg container (0=MP4, 1=MKV, 2=MOV, 3=WEBM, 4=AVI).");
+		dvar_ffmpeg_faststart = T6SDK::Dvars::RegisterBool("mvm_ffmpeg_faststart", true, "Move the MP4/MOV moov atom to the start of the file.");
+		dvar_ffmpeg_extraArgs = T6SDK::Dvars::RegisterString("mvm_ffmpeg_extraArgs", "", "Extra FFmpeg arguments appended before the output file.");
 
 		//Register weapon dvars
 		dvar_camoChanging = T6SDK::Dvars::RegisterBool("mvm_camoChanging", false, "Enable weapon camo changing.");

@@ -301,6 +301,7 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="ScreenGrab.h" />
     <ClInclude Include="FFmpegEncoder.h" />
+    <ClInclude Include="FFmpegMenu.h" />
     <ClInclude Include="SafeDemo.h" />
     <ClInclude Include="Settings.h" />
     <ClInclude Include="SettingsMenu.h" />

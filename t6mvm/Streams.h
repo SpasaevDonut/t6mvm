@@ -228,7 +228,7 @@ namespace Streams
 			T6SDK::Drawing::DrawTextAbsolute(buffer0, coords.x, coords.y, 1.5f, T6SDK::Drawing::WHITECOLOR, T6SDK::AnchorPoint::Center, 0x00);
 
 			char formatBuffer1[96];
-			sprintf(formatBuffer1, "%s", RecordingAsFFmpeg ? "Recording as ^3FFMPEG MP4 ^7(temporary ^3JPG ^7frames)" : RecordingAsAvi ? "Recording as ^3AVI" : T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_JPG) ? "Recording as ^3JPG ^7sequence" : "Recording as ^3PNG ^7sequence");
+			sprintf(formatBuffer1, "%s", RecordingAsFFmpeg ? "Recording as ^3FFMPEG ^7(temporary ^3JPG ^7frames)" : RecordingAsAvi ? "Recording as ^3AVI" : T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_JPG) ? "Recording as ^3JPG ^7sequence" : "Recording as ^3PNG ^7sequence");
 			
 			vec2_t coords2 = T6SDK::Drawing::GetGridCellCoords(8, 21);
 			T6SDK::Drawing::DrawTextAbsolute(formatBuffer1, coords2.x, coords2.y, 1.0f, T6SDK::Drawing::WHITECOLOR, T6SDK::AnchorPoint::Center, 0x00);
@@ -506,7 +506,7 @@ namespace Streams
 			std::string error;
 			if (FFmpeg::EncodeSequence(job, error))
 			{
-				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_SUCCESS, false, "STREAMS", "Encoded MP4: %s", job.OutputPath.c_str());
+				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_SUCCESS, false, "STREAMS", "Encoded video: %s", job.OutputPath.c_str());
 			}
 			else
 			{
@@ -562,9 +562,18 @@ namespace Streams
 				FFmpeg::EncodeJob job{};
 				job.Executable = Settings::Settings::FFmpegPath;
 				job.InputPattern = stream->Dir + "\\" + stream->Name + "_%d.JPG";
-				job.OutputPath = folderToDeleteWhenAborted + "\\" + stream->Name + ".mp4";
+				job.OutputPath = folderToDeleteWhenAborted + "\\" + stream->Name + "." + FFmpeg::ContainerExtension(T6SDK::Dvars::GetInt(CustomDvars::dvar_ffmpeg_container));
 				job.FrameDirectory = stream->Dir;
 				job.FPS = T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_fps);
+				job.Codec = T6SDK::Dvars::GetInt(CustomDvars::dvar_ffmpeg_codec);
+				job.Quality = T6SDK::Dvars::GetFloat(CustomDvars::dvar_ffmpeg_quality);
+				job.Preset = T6SDK::Dvars::GetInt(CustomDvars::dvar_ffmpeg_preset);
+				job.PixelFormat = T6SDK::Dvars::GetInt(CustomDvars::dvar_ffmpeg_pixelFormat);
+				job.Container = T6SDK::Dvars::GetInt(CustomDvars::dvar_ffmpeg_container);
+				job.Faststart = T6SDK::Dvars::GetBool(CustomDvars::dvar_ffmpeg_faststart);
+				const char* extraArgs = T6SDK::Dvars::GetString(CustomDvars::dvar_ffmpeg_extraArgs);
+				if (extraArgs)
+					job.ExtraArgs = extraArgs;
 				jobs->push_back(job);
 			}
 			if (jobs->empty())
@@ -738,7 +747,7 @@ namespace Streams
 
 		if (IsFFmpegEncoding)
 		{
-			T6SDK::Theater::Demo_Error("FFmpeg is still encoding!", "Wait for the previous MP4 to finish before starting a new recording.");
+			T6SDK::Theater::Demo_Error("FFmpeg is still encoding!", "Wait for the previous video to finish before starting a new recording.");
 			return;
 		}
 

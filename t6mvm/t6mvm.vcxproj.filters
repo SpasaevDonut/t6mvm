@@ -165,6 +165,9 @@
     <ClInclude Include="StreamsMenu.h">
       <Filter>Components\Theater\StreamsMenu</Filter>
     </ClInclude>
+    <ClInclude Include="FFmpegMenu.h">
+      <Filter>Components\Theater\StreamsMenu</Filter>
+    </ClInclude>
     <ClInclude Include="Default.h">
       <Filter>Components\Streams</Filter>
     </ClInclude>

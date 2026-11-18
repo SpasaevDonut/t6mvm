@@ -58,6 +58,7 @@ namespace MainMenu
 		cfgData += DofMenu::GetCFG();
 		cfgData += SunMenu::GetCFG();
 		cfgData += StreamsMenu::GetCFG();
+		cfgData += FFmpegMenu::GetCFG();
 		cfgData += WeaponMenu::GetCFG();
 
 		char openedFileName[MAX_PATH];

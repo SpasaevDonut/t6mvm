@@ -281,8 +281,8 @@ namespace StreamsMenu
 		UIControls::UI_StreamsAVICheckBox = T6SDK::Drawing::UI_CheckBoxButton("TYPE: IMAGE SEQUENCE", "TYPE: AVI", 4, 18, T6SDK::AnchorPoint::TopLeft, &CustomDvars::dvar_streams_avi->current.enabled, std::function<void(bool)>(OnAviModeChanged));
 		UIControls::UI_StreamsAVICheckBox.ToolTip = "^7Record as ^5IMAGE SEQUENCE ^7or ^5AVI ^7file.";
 
-		UIControls::UI_StreamsFFmpegCheckBox = T6SDK::Drawing::UI_CheckBoxButton("FFMPEG MP4 OFF", "FFMPEG MP4 ON", 4, 20, T6SDK::AnchorPoint::TopLeft, &CustomDvars::dvar_streams_ffmpeg->current.enabled, std::function<void(bool)>(OnFFmpegModeChanged));
-		UIControls::UI_StreamsFFmpegCheckBox.ToolTip = "^7Encode recorded frames to a compressed ^5H.264 MP4 ^7with FFmpeg. Requires ^3ffmpeg.exe ^7below.";
+		UIControls::UI_StreamsFFmpegCheckBox = T6SDK::Drawing::UI_CheckBoxButton("FFMPEG VIDEO OFF", "FFMPEG VIDEO ON", 4, 20, T6SDK::AnchorPoint::TopLeft, &CustomDvars::dvar_streams_ffmpeg->current.enabled, std::function<void(bool)>(OnFFmpegModeChanged));
+		UIControls::UI_StreamsFFmpegCheckBox.ToolTip = "^7Encode recorded frames with FFmpeg using the codec and container from the ^5FFMPEG ^7tab. Requires ^3ffmpeg.exe ^7below.";
 
 		UIControls::UI_StreamsFFmpegPathButton = T6SDK::Drawing::UI_ClickableButton("FFMPEG: NOT SET", 4, 32, T6SDK::AnchorPoint::TopLeft, (uintptr_t)&SelectFFmpegPath);
 		UIControls::UI_StreamsFFmpegPathButton.ToolTip = "Select ffmpeg.exe. FFmpeg must include the libx264 encoder.";

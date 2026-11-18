@@ -21,6 +21,7 @@ namespace UIControls
 	inline static T6SDK::Drawing::UI_RadioButton StreamsTabButton("^7STREAMS", 0, 2, 23, T6SDK::AnchorPoint::TopLeft, 0x00);
 	inline static T6SDK::Drawing::UI_RadioButton WeaponTabButton("^7WEAPON", 0, 2, 25, T6SDK::AnchorPoint::TopLeft, 0x00);
 	inline static T6SDK::Drawing::UI_RadioButton SlidersTabButton("^7SLIDERS", 0, 2, 27, T6SDK::AnchorPoint::TopLeft, 0x00);
+	inline static T6SDK::Drawing::UI_RadioButton FFmpegTabButton("^7FFMPEG", 0, 2, 29, T6SDK::AnchorPoint::TopLeft, 0x00);
 
 	//CAMERA controls
 	inline static T6SDK::Drawing::UI_CheckBoxButton UI_FrozenCamera{};
@@ -156,6 +157,18 @@ namespace UIControls
 	inline static T6SDK::Drawing::UI_ClickableButton UI_StreamsFFmpegPathButton{};
 	inline static T6SDK::Drawing::UI_CheckBoxButton UI_StreamsNoFlashCheckBox{};
 	inline static T6SDK::Drawing::UI_CheckBoxButton UI_RecordCamCheckBox{};
+
+	//FFMPEG controls
+	inline static T6SDK::Drawing::UI_EnumButton UI_FFmpegCodecEnum{};
+	inline static T6SDK::Drawing::UI_Slider UI_FFmpegQuality{};
+	inline static T6SDK::Drawing::UI_EnumButton UI_FFmpegPresetEnum{};
+	inline static T6SDK::Drawing::UI_EnumButton UI_FFmpegPixelFormatEnum{};
+	inline static T6SDK::Drawing::UI_EnumButton UI_FFmpegContainerEnum{};
+	inline static T6SDK::Drawing::UI_CheckBoxButton UI_FFmpegFaststartCheckBox{};
+	inline static T6SDK::Drawing::UI_ClickableButton UI_FFmpegExtraArgsButton{};
+	inline static T6SDK::Drawing::UI_ClickableButton UI_FFmpegResetButton{};
+	inline static T6SDK::Drawing::UI_TextBoxDialog UI_FFmpegExtraArgsDialog{};
+
 	//streams passes
 	/*inline static T6SDK::Drawing::UI_CheckBoxButton UI_StreamsPass1CheckBox{};
 	inline static T6SDK::Drawing::UI_CheckBoxButton UI_StreamsPass2CheckBox{};
@@ -254,6 +267,7 @@ namespace UIControls
 		UI_DemoBrowseCheckButton.ToolTip = "Load a demo from file.";
 		Common::UI_BookmarkDialog = T6SDK::Drawing::UI_TextBoxDialog("Provide bookmark description (may be empty)");
 		SlidersTabButton.ToolTip = "Create and manage custom sliders!";
+		FFmpegTabButton.ToolTip = "Configure FFmpeg codecs, quality, presets and output containers.";
 
 	}
 	inline static void DrawTabs()
@@ -270,5 +284,6 @@ namespace UIControls
 		StreamsTabButton.Draw();
 		WeaponTabButton.Draw();
 		SlidersTabButton.Draw();
+		FFmpegTabButton.Draw();
 	}
 }
