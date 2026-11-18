@@ -38,6 +38,8 @@ Here're some of the project's best features:
 * The <b>FFMPEG</b> tab selects the codec (H.264, H.265, ProRes, UtVideo, AV1, VP9), quality (CRF), speed preset, pixel format, output container, faststart, and arbitrary extra arguments. Defaults reproduce the original H.264/CRF 18/veryfast/MP4 output. Choose a container compatible with your codec (e.g. WEBM for VP9); ProRes and UtVideo are lossless so quality/preset are ignored.
 * H.265 uses <b>CRF</b> too (FFmpeg's `-crf`), on the same 0–51 range, but the numbers are not equivalent to H.264: x265 defaults to 28 while x264 defaults to 23, and CRF 18 in H.265 is higher quality/larger than CRF 18 in H.264.
 * Use the <b>AUTO OPEN FOLDER</b> toggle in the Streams tab (also in the Settings menu) to stop Explorer from opening when a recording finishes.
+* If FFmpeg is still finalizing when recording stops, an <b>ENCODING IN PROGRESS</b> splash stays on screen until it is safe to record again.
+* The <b>MISC</b> tab has a <b>HIDE 2D</b> toggle that sets `cg_draw2D` to 0 — removes the HUD, blood splatter and other 2D overlays.
 
 <p id="description"> </p>
 

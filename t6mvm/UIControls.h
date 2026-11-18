@@ -64,6 +64,7 @@ namespace UIControls
 	inline static T6SDK::Drawing::UI_CheckBoxButton UI_GreenSky{};
 	inline static T6SDK::Drawing::UI_CheckBoxButton UI_BloomTweaks{};
 	inline static T6SDK::Drawing::UI_CheckBoxButtonInversed UI_RemoveTheaterBarrier{};
+	inline static T6SDK::Drawing::UI_CheckBoxButtonInversed UI_Hide2D{};
 
 	//BONE CAMERA controls
 	inline static T6SDK::Drawing::UI_EnumButton UI_SelectedBoneButton{};

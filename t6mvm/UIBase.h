@@ -213,6 +213,8 @@ namespace UIBase
 			{
 				Streams::ShowProgressOnScreen();
 			}
+			if (Streams::IsFFmpegEncoding)
+				Streams::ShowEncodingProgressOnScreen();
 			if (CustomDvars::dvar_uiGridDebug->current.enabled)
 				DrawUIGrid();
 		}

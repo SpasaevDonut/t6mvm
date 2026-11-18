@@ -242,6 +242,8 @@ namespace Streams
 			return;
 		if(!IsStreamsRunning)
 			return;
+		if (IsFFmpegEncoding)
+			return;
 		if (T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_tickStart) > -1 && T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_tickEnd) > -1)
 		{
 			int totalFrames = (T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_tickEnd) - T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_tickStart))/(1000 / T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_fps));
@@ -276,6 +278,18 @@ namespace Streams
 			sprintf(buffer3, "Press ^3%s ^7to stop. Press ^1%s ^7to abort recording and remove recorded files.", T6SDK::Input::GetKeyByCode(Settings::Settings::KeyBinds["StreamsStartStop"])->KeyName.c_str(), T6SDK::Input::GetKeyByCode(Settings::Settings::KeyBinds["StreamsAbort"])->KeyName.c_str());
 			T6SDK::Drawing::DrawTextAbsolute(buffer3, coords2.x, coords2.y, 1.0f, T6SDK::Drawing::WHITECOLOR, T6SDK::AnchorPoint::Center, 0x00);
 		}
+	}
+
+	static void ShowEncodingProgressOnScreen()
+	{
+		if (!IsFFmpegEncoding)
+			return;
+
+		vec2_t coords = T6SDK::Drawing::GetGridCellCoords(8, 19);
+		T6SDK::Drawing::DrawTextAbsolute("^3FFMPEG ENCODING IN PROGRESS", coords.x, coords.y, 1.5f, T6SDK::Drawing::WHITECOLOR, T6SDK::AnchorPoint::Center, 0x00);
+
+		vec2_t coords2 = T6SDK::Drawing::GetGridCellCoords(8, 21);
+		T6SDK::Drawing::DrawTextAbsolute("^7Encoding incomplete, please wait before starting another recording.", coords2.x, coords2.y, 1.0f, T6SDK::Drawing::WHITECOLOR, T6SDK::AnchorPoint::Center, 0x00);
 	}
 
 	long HRES;
