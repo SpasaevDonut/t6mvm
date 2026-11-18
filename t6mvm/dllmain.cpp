@@ -57,9 +57,9 @@ DWORD WINAPI mainThread(LPVOID param)
     return 0;
 }
 
-// Redacted's plugin loader rejects (and unloads) a plugin without these
-// exports. T6MVM's actual initialization remains in the DllMain worker thread;
-// these entry points only keep the module resident and report success.
+// Redacted's plugin loader rejects (and unloads) a plugin that does not export
+// this whole entry-point set. T6MVM's actual initialization remains in the
+// DllMain worker thread; these entry points keep the module resident.
 extern "C" __declspec(dllexport) int PreInit()
 {
     return 1;
@@ -73,6 +73,35 @@ extern "C" __declspec(dllexport) int PostInit()
 extern "C" __declspec(dllexport) int Uninit()
 {
     return 1;
+}
+
+extern "C" __declspec(dllexport) const char* AuthorInfo()
+{
+    return "T6MVM";
+}
+
+extern "C" __declspec(dllexport) const char* ExtendedInfo()
+{
+    return "T6MVM";
+}
+
+extern "C" __declspec(dllexport) int OfficialMod()
+{
+    return 0;
+}
+
+extern "C" __declspec(dllexport) int DependencyCount()
+{
+    return 0;
+}
+
+extern "C" __declspec(dllexport) const char* GetDependency(int index)
+{
+    return nullptr;
+}
+
+extern "C" __declspec(dllexport) void SendMessageB(const char* pluginName, const char* message)
+{
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved)
