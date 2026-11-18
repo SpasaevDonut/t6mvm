@@ -120,8 +120,11 @@ DllMain(DLL_PROCESS_ATTACH)
 `T6SDK::MAIN::DEBUG = true` is set in `Init()`. Do not turn on debug behavior
 or extra per-frame logging for a production change.
 
-The Redacted plugin loader rejects and unloads a plugin that does not export
-`PreInit`/`PostInit`. `dllmain.cpp` keeps those as empty exports and still
+The Redacted plugin loader requires the full plugin entry-point set:
+`PreInit`, `PostInit`, `Uninit`, `AuthorInfo`, `ExtendedInfo`, `OfficialMod`,
+`DependencyCount`, `GetDependency`, and `SendMessageB`. A missing export makes
+the loader unload the module; the DllMain worker thread would then run after
+the module is unmapped. `dllmain.cpp` keeps the set as no-op exports and still
 performs initialization from the DllMain worker thread.
 
 ### Event-driven behavior
