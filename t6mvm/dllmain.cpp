@@ -5,6 +5,7 @@
 #include "TheaterBase.h"
 #include "WeaponAnimations.h"
 #include "Settings.h"
+#include "Trace.h"
 
 void SetDemoDirectoryDvar()
 {
@@ -26,18 +27,29 @@ void SetDemoDirectoryDvar()
 
 void OnGameLoaded()
 {
+    T6MVM_Trace::Write("OnGameLoaded start");
     CustomDvars::Init();
+    T6MVM_Trace::Write("CustomDvars::Init done");
     UIBase::Init();
+    T6MVM_Trace::Write("UIBase::Init done");
     TheaterBase::Init();
+    T6MVM_Trace::Write("TheaterBase::Init done");
     if (T6SDK::Typedefs::UI_OpenToastPopup)
         T6SDK::InternalFunctions::UI_OpenToastPopup("^5T6MVM loaded!", "Have fun editing!", 10000);
+    T6MVM_Trace::Write("toast done");
     Streams::InitStreams();
+    T6MVM_Trace::Write("Streams::InitStreams done");
     T6SDK::MAIN::InitializeDevConsole();
+    T6MVM_Trace::Write("InitializeDevConsole done");
     WeaponAnimations::Init();
+    T6MVM_Trace::Write("WeaponAnimations::Init done");
     //Read settings
     Settings::Settings::Load();
+    T6MVM_Trace::Write("Settings::Load done");
     SetDemoDirectoryDvar();
+    T6MVM_Trace::Write("SetDemoDirectoryDvar done");
     Common::LoadAllDemos();
+    T6MVM_Trace::Write("LoadAllDemos done");
 }
 
 void Init()
@@ -47,21 +59,30 @@ void Init()
     T6SDK::Events::RegisterListener(T6SDK::EventType::OnGameLoaded, (uintptr_t)&OnGameLoaded);
 }
 HANDLE hThread;
+inline static bool initialized = false;
 
 DWORD WINAPI mainThread(LPVOID param)
 {
+    T6MVM_Trace::Write("worker start");
     Sleep(5000);
+    T6MVM_Trace::Write("worker awake");
+    T6MVM_Trace::Write("T6SDK PreInit begin");
     Init();
+    initialized = true;
+    T6MVM_Trace::Write("T6SDK PreInit end");
     SuspendThread(hThread);
     CloseHandle(hThread);
     return 0;
 }
 
 // Redacted's plugin loader rejects (and unloads) a plugin that does not export
-// this whole entry-point set. T6MVM's actual initialization remains in the
-// DllMain worker thread; these entry points keep the module resident.
+// this whole entry-point set. PreInit starts T6MVM's worker thread; these
+// entry points keep the module resident and satisfy the loader.
 extern "C" __declspec(dllexport) int PreInit()
 {
+    T6MVM_Trace::Write("PreInit export");
+    if (!hThread)
+        hThread = CreateThread(nullptr, 0, &mainThread, nullptr, 0, nullptr);
     return 1;
 }
 
@@ -110,10 +131,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
     switch (ul_reason_for_call)
     {
     case DLL_PROCESS_ATTACH:
-        hThread = CreateThread(nullptr, 0, &mainThread, nullptr, 0, nullptr);
+        T6MVM_Trace::Write("DllMain attach");
         break;
     case DLL_PROCESS_DETACH:
-        T6SDK::MAIN::DeInitialize();
+        T6MVM_Trace::Write("DllMain detach");
+        if (initialized)
+            T6SDK::MAIN::DeInitialize();
         break;
     }
     return TRUE;

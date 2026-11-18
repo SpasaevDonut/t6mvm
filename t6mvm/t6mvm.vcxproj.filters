@@ -147,6 +147,9 @@
     <ClInclude Include="FFmpegEncoder.h">
       <Filter>Components\Streams</Filter>
     </ClInclude>
+    <ClInclude Include="Trace.h">
+      <Filter>Components\Streams</Filter>
+    </ClInclude>
     <ClInclude Include="Depth.h">
       <Filter>Components\Streams</Filter>
     </ClInclude>

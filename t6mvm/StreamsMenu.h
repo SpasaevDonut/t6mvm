@@ -1,6 +1,7 @@
 #pragma once
 #include "UIControls.h"
 #include "Streams.h"
+#include "Trace.h"
 #include "CustomDvars.h"
 #include "Settings.h"
 namespace StreamsMenu
@@ -263,6 +264,7 @@ namespace StreamsMenu
 
 	static void Init()
 	{
+		T6MVM_Trace::Write("StreamsMenu::Init start");
 		UIControls::UI_ToggleStreamsCheckBox = T6SDK::Drawing::UI_CheckBoxButton("STREAMS OFF","STREAMS ON",4,5, T6SDK::AnchorPoint::TopLeft, &CustomDvars::dvar_streams->current.enabled, 0x00);
 		UIControls::UI_ToggleStreamsCheckBox.ToolTip = "Toggle recording streams.";
 
@@ -281,6 +283,7 @@ namespace StreamsMenu
 		UIControls::UI_StreamsAVICheckBox = T6SDK::Drawing::UI_CheckBoxButton("TYPE: IMAGE SEQUENCE", "TYPE: AVI", 4, 18, T6SDK::AnchorPoint::TopLeft, &CustomDvars::dvar_streams_avi->current.enabled, std::function<void(bool)>(OnAviModeChanged));
 		UIControls::UI_StreamsAVICheckBox.ToolTip = "^7Record as ^5IMAGE SEQUENCE ^7or ^5AVI ^7file.";
 
+		T6MVM_Trace::Write("ffmpeg dvar %p", (void*)CustomDvars::dvar_streams_ffmpeg);
 		UIControls::UI_StreamsFFmpegCheckBox = T6SDK::Drawing::UI_CheckBoxButton("FFMPEG MP4 OFF", "FFMPEG MP4 ON", 4, 20, T6SDK::AnchorPoint::TopLeft, &CustomDvars::dvar_streams_ffmpeg->current.enabled, std::function<void(bool)>(OnFFmpegModeChanged));
 		UIControls::UI_StreamsFFmpegCheckBox.ToolTip = "^7Encode recorded frames to a compressed ^5H.264 MP4 ^7with FFmpeg. Requires ^3ffmpeg.exe ^7below.";
 
@@ -303,6 +306,6 @@ namespace StreamsMenu
 		float sizeY = 33.0f * scale;
 
 		T6SDK::Events::RegisterListener(T6SDK::EventType::OnTheaterControlsDrawn, (uintptr_t)&OnTheaterControlsDrawn);
-
+		T6MVM_Trace::Write("StreamsMenu::Init end");
 	}
 }
