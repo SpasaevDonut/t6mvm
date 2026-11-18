@@ -191,7 +191,6 @@ namespace Streams
 #pragma region Streams defs
 	int frameCount = 0;
 	inline static bool IsStreamsStarted = false;
-	inline static bool ScreenshotRequested = false;
 	inline static bool IsAnyOtherStream = false;
 	inline static bool StreamShouldIgnoreReshade = false;
 	bool FreeBufferRequested = false;
@@ -383,6 +382,20 @@ namespace Streams
 		T6SDK::Drawing::DrawTextAbsolute("^7Encoding incomplete, please wait before starting another recording.", coords2.x, coords2.y, 1.0f, T6SDK::Drawing::WHITECOLOR, T6SDK::AnchorPoint::Center, 0x00);
 	}
 
+	// Capture is driven by the game's normal Present instead of forced redraws.
+	// Applying a pass needs one frame for its dvars to take effect, so each pass
+	// gets a settle frame followed by a capture frame on the next Present.
+	enum class CapturePhase { Idle, Settle, Capture };
+	inline static std::vector<IMVMStream*> CyclePasses{};
+	inline static size_t CurrentPassIndex = 0;
+	inline static IMVMStream* CurrentStream = nullptr;
+	inline static CapturePhase Phase = CapturePhase::Idle;
+	inline static bool CaptureCycleActive = false;
+	inline static bool TickAdvanceReady = false;
+	inline static bool CycleUsesOnlyFallback = false;
+	inline static int tickDelta = 0;
+	static void FinishCapturePass();
+
 	long HRES;
 	static long __stdcall detour_present(IDXGISwapChain* p_swap_chain, UINT sync_interval, UINT flags)
 	{
@@ -410,7 +423,13 @@ namespace Streams
 		}
 
 
-		if (ScreenshotRequested)
+		if (CaptureCycleActive && Phase == CapturePhase::Settle)
+		{
+			// This Present used the pass state applied by ApplyCapturePass. The
+			// dvars only took effect on this render, so capture the next frame.
+			Phase = CapturePhase::Capture;
+		}
+		else if (CaptureCycleActive && Phase == CapturePhase::Capture)
 		{
 			if (RecordingAsAvi)
 			{
@@ -418,7 +437,6 @@ namespace Streams
 				HRESULT hr = p_swap_chain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<LPVOID*>(&backBuffer));
 				if (SUCCEEDED(hr) && backBuffer)
 					CaptureBackBufferAndQueueAvi(p_context, backBuffer);
-				ScreenshotRequested = false;
 				if (backBuffer)
 					backBuffer->Release();
 			}
@@ -464,7 +482,6 @@ namespace Streams
 					}
 					backBuffer->Release();
 				}
-				ScreenshotRequested = false;
 			}
 			else
 			{
@@ -507,8 +524,8 @@ namespace Streams
 					}
 					backBuffer->Release();
 				}
-				ScreenshotRequested = false;
 			}
+			FinishCapturePass();
 		}
 
 		if (StreamShouldIgnoreReshade == true)
@@ -640,7 +657,7 @@ namespace Streams
 		}
 	}
 
-	void CaptureScreenshot(IMVMStream* currentStream)
+	void PrepareCaptureTarget(IMVMStream* currentStream)
 	{
 		CurrentPipeTarget = nullptr;
 		if (RecordingAsFFmpeg)
@@ -664,11 +681,6 @@ namespace Streams
 			sprintf(buffer, "%s\\%s_%i.%s", currentStream->Dir.c_str(), currentStream->Name, frameCount, formatBuffer);
 			filename = currentStream->Dir+ "\\" +currentStream->Name+"_"+std::to_string(frameCount)+"."+formatBuffer;
 		}
-		// The first redraw applies the pass dvars; the second presents the frame
-		// that actually gets captured. Removing either one captures stale state.
-		T6SDK::InternalFunctions::SCR_UpdateScreen(2);
-		ScreenshotRequested = true;
-		T6SDK::InternalFunctions::SCR_UpdateScreen(2);
 	}
 	bool abortingStreams = false;
 	void NotifyOnStreamsFinished()
@@ -796,10 +808,18 @@ namespace Streams
 		if (!T6SDK::Dvars::GetBool(CustomDvars::dvar_streams))
 			return;
 		T6SDK::Addresses::IsDemoPaused.Value() = true;
-		ScreenshotRequested = false;
 		IsAnyOtherStream = false;
 		ReleaseCaptureTexture();
 		LocalAddresses::h_TickIncreasing.UnHook();
+		if (CurrentStream)
+		{
+			CurrentStream->Disable();
+			CurrentStream = nullptr;
+		}
+		CaptureCycleActive = false;
+		TickAdvanceReady = false;
+		Phase = CapturePhase::Idle;
+		CyclePasses.clear();
 		// Drain (or discard on abort) all queued frames before finalizing AVI files.
 		StopAsyncFrameWriter(abortingStreams);
 		IsStreamsRunning = false;
@@ -873,58 +893,47 @@ namespace Streams
 		RecordingAsAvi = false;
 	}
 
-	int StreamsPassesEnabled = 0;
 	static int FrameTimeMeasured = 0;
 	static vector<std::chrono::nanoseconds> FrameTimes{};
 	static std::chrono::steady_clock::time_point start_time;
 	static std::chrono::steady_clock::time_point end_time;
 
-	inline static void Update()
+	static void ApplyCapturePass(size_t index);
+
+	static void BeginCaptureCycle()
 	{
-		if (!T6SDK::Dvars::GetBool(CustomDvars::dvar_streams))
-			return;
-		if (!IsStreamsStarted)
-			return;
-		if (T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_tickStart) > -1 && T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_tickEnd) > -1)
-		{
-			if (T6SDK::Addresses::Tick.Value() >= T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_tickEnd))
-			{
-				StopStreams();
-				return;
-			}
-		}
-		if(FrameTimeMeasured < 3)
-			start_time = std::chrono::high_resolution_clock::now();
-		IsStreamsRunning = true;
-		IsAnyOtherStream = false;
-		StreamShouldIgnoreReshade = false;
-		T6SDK::InternalFunctions::SCR_UpdateScreen(2);
-		StreamsPassesEnabled = 0;
-		if(T6SDK::Theater::IsInTheater())
+		CyclePasses.clear();
+		if (T6SDK::Theater::IsInTheater())
 		{
 			for (auto& stream : Streams)
 			{
 				if (stream->toggle->current.enabled)
-				{
-					StreamsPassesEnabled++;
-					IsAnyOtherStream = true; //NOFLASH
-					StreamShouldIgnoreReshade = stream->IgnoreReshade->current.enabled;
-					stream->Enable();
-					gmav = stream->gmav;
-					CaptureScreenshot(stream);
-					stream->Disable();
-				}
+					CyclePasses.push_back(stream);
 			}
 		}
-		if(StreamsPassesEnabled == 0)
-			CaptureScreenshot(&Default);
+		CycleUsesOnlyFallback = CyclePasses.empty();
+		if (CycleUsesOnlyFallback)
+			CyclePasses.push_back(&Default);
+		CurrentPassIndex = 0;
+		CaptureCycleActive = true;
+		if (FrameTimeMeasured < 3)
+			start_time = std::chrono::high_resolution_clock::now();
+		ApplyCapturePass(0);
+	}
 
-		frameCount++;
-		if (T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_recordCam))
-		{
-			RecordCamera();
-		}
+	static void ApplyCapturePass(size_t index)
+	{
+		CurrentStream = CyclePasses[index];
+		CurrentStream->Enable();
+		gmav = CurrentStream->gmav;
+		IsAnyOtherStream = !CycleUsesOnlyFallback;
+		StreamShouldIgnoreReshade = CurrentStream->IgnoreReshade->current.enabled;
+		PrepareCaptureTarget(CurrentStream);
+		Phase = CapturePhase::Settle;
+	}
 
+	static void MeasureFrameTime()
+	{
 		if (FrameTimeMeasured < 3)
 		{
 			end_time = std::chrono::high_resolution_clock::now();
@@ -932,9 +941,8 @@ namespace Streams
 			FrameTimes.push_back(duration);
 			FrameTimeMeasured++;
 		}
-		else if(FrameTimeMeasured == 3)
+		else if (FrameTimeMeasured == 3)
 		{
-			//Calculate average frame time
 			auto total_duration = std::chrono::nanoseconds(0);
 			for (const auto& frame_time : FrameTimes)
 			{
@@ -951,8 +959,58 @@ namespace Streams
 			}
 			FrameTimeMeasured++;
 		}
+	}
 
-		//T6SDK::ConsoleLog::LogFormatted(CONSOLETEXTGREEN, "Successfully captured %i", frameCount);
+	static void FinishCapturePass()
+	{
+		if (!CaptureCycleActive || !CurrentStream)
+			return;
+		CurrentStream->Disable();
+		CurrentStream = nullptr;
+		CurrentPassIndex++;
+		if (CurrentPassIndex < CyclePasses.size())
+		{
+			ApplyCapturePass(CurrentPassIndex);
+			return;
+		}
+		CaptureCycleActive = false;
+		Phase = CapturePhase::Idle;
+		TickAdvanceReady = true;
+		frameCount++;
+		if (T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_recordCam))
+			RecordCamera();
+		MeasureFrameTime();
+	}
+
+	inline static int Update()
+	{
+		tickDelta = 0;
+		if (!T6SDK::Dvars::GetBool(CustomDvars::dvar_streams))
+			return 0;
+		if (!IsStreamsStarted)
+			return 0;
+		if (T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_tickStart) > -1 && T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_tickEnd) > -1)
+		{
+			if (T6SDK::Addresses::Tick.Value() >= T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_tickEnd))
+			{
+				StopStreams();
+				return 0;
+			}
+		}
+
+		IsStreamsRunning = true;
+		if (TickAdvanceReady)
+		{
+			// A full cycle has been captured for this demo tick: advance the
+			// demo by one recorded frame interval and start the next cycle.
+			TickAdvanceReady = false;
+			BeginCaptureCycle();
+			tickDelta = tickStep;
+			return tickDelta;
+		}
+		if (!CaptureCycleActive)
+			BeginCaptureCycle();
+		return 0;
 	}
 
 	uintptr_t eaxTMP, ecxTMP, edxTMP, esiTMP, ediTMP, espTMP, ebpTMP;
@@ -989,7 +1047,7 @@ namespace Streams
 			cmp [tickIncreasingEnabled], 0
 			je TickIncreasingDisabled
 			call Update
-			mov eax, tickStep
+			mov eax, [tickDelta]
 			mov edx, [edxTMP]
 			mov ecx, [ecxTMP]
 			mov esi, [esiTMP]
@@ -1195,6 +1253,13 @@ namespace Streams
 			StopStreams();
 			return;
 		}
+
+		CaptureCycleActive = false;
+		TickAdvanceReady = false;
+		Phase = CapturePhase::Idle;
+		CurrentPassIndex = 0;
+		CurrentStream = nullptr;
+		CyclePasses.clear();
 
 		LocalAddresses::h_TickIncreasing.Hook(OnTickIncreasing);
 		T6SDK::Addresses::IsDemoPaused.Value() = false;
