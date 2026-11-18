@@ -232,7 +232,13 @@ namespace Common
 				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_WARNING, false, "T6MVM", "Skipping incomplete demo: %s", file.string().c_str());
 				continue;
 			}
-			T6SDK::DemoBriefData data = T6SDK::DemoHandler::GetDemoBriefData(file.string().c_str());
+			T6SDK::DemoBriefData data;
+			if (!T6SDK::DemoHandler::TryGetDemoBriefData(file.string().c_str(), &data))
+			{
+				T6MVM_Trace::Write("LoadAllDemos parse failed %s", file.string().c_str());
+				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_WARNING, false, "T6MVM", "Skipping demo that failed to parse: %s", file.string().c_str());
+				continue;
+			}
 			T6MVM_Trace::Write("LoadAllDemos read %s", file.string().c_str());
 			if (data.DemoPath.empty())
 				continue;
