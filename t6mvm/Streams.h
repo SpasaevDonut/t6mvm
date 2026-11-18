@@ -664,8 +664,9 @@ namespace Streams
 			sprintf(buffer, "%s\\%s_%i.%s", currentStream->Dir.c_str(), currentStream->Name, frameCount, formatBuffer);
 			filename = currentStream->Dir+ "\\" +currentStream->Name+"_"+std::to_string(frameCount)+"."+formatBuffer;
 		}
-		// Pass state is already applied by Enable(), so one redraw with the
-		// screenshot flag set is enough; the old first redraw was captured over.
+		// The first redraw applies the pass dvars; the second presents the frame
+		// that actually gets captured. Removing either one captures stale state.
+		T6SDK::InternalFunctions::SCR_UpdateScreen(2);
 		ScreenshotRequested = true;
 		T6SDK::InternalFunctions::SCR_UpdateScreen(2);
 	}
