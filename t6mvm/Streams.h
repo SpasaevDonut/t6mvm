@@ -36,78 +36,155 @@
 
 namespace Streams
 {
-	void* gmav = 0x00;
-#pragma region AviFile methods
-	// Function to capture the back buffer and write it to an AVI file
-	static bool CaptureBackBufferAndWriteToAVI(ID3D11DeviceContext* pDeviceContext, ID3D11Device* pDevice, ID3D11Texture2D* pBackBuffer)
+	// Frames are copied to CPU memory on the render thread, then encoded and
+	// written by a worker. This overlaps rendering with WIC compression / disk I/O
+	// and keeps the tick hook from blocking on them.
+	enum class AsyncFrameKind { Image, Avi };
+
+	struct AsyncFrameJob
 	{
-		// Create a staging texture to copy the back buffer
-		D3D11_TEXTURE2D_DESC desc;
-		pBackBuffer->GetDesc(&desc);
-		desc.Usage = D3D11_USAGE_STAGING;
-		desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-		desc.BindFlags = 0;
+		std::vector<uint8_t> Pixels{};
+		UINT Width = 0;
+		UINT Height = 0;
+		GUID Container{};
+		std::wstring Path{};
+		void* Gmav = nullptr;
+		AsyncFrameKind Kind = AsyncFrameKind::Image;
+	};
 
-		ID3D11Texture2D* pStagingTexture = nullptr;
-		HRESULT hr = pDevice->CreateTexture2D(&desc, nullptr, &pStagingTexture);
-		if (FAILED(hr))
+	inline static std::deque<AsyncFrameJob> AsyncQueue{};
+	inline static std::mutex AsyncQueueMutex{};
+	inline static std::condition_variable AsyncQueueReady{};
+	inline static std::condition_variable AsyncQueueSpace{};
+	inline static HANDLE AsyncWriterThread = nullptr;
+	inline static bool AsyncWriterStop = false;
+	inline static int AsyncEncodeFailures = 0;
+	static constexpr size_t MaxQueuedAsyncFrames = 16;
+
+	static void EnqueueAsyncFrame(AsyncFrameJob&& job)
+	{
+		// Backpressure: the tick hook must not outrun the writer, otherwise the
+		// demo advances past frames we never encoded and the output is truncated.
+		unique_lock<mutex> lock(AsyncQueueMutex);
+		AsyncQueueSpace.wait(lock, []() { return AsyncQueue.size() < MaxQueuedAsyncFrames || AsyncWriterStop; });
+		if (AsyncWriterStop)
+			return;
+		AsyncQueue.push_back(std::move(job));
+		AsyncQueueReady.notify_one();
+	}
+
+	static DWORD WINAPI AsyncFrameWriterThread(LPVOID)
+	{
+		// WIC COM objects require COM on the thread that creates them.
+		CoInitialize(nullptr);
+		static std::vector<BYTE> aviRgbBuffer{};
+		for (;;)
 		{
-			MessageBox(NULL, "Failed to create staging texture!", "Error", MB_OK);
-			return false;
-		}
-
-		// Copy the back buffer to the staging texture
-		pDeviceContext->CopyResource(pStagingTexture, pBackBuffer);
-
-		// Map the staging texture to access its data
-		D3D11_MAPPED_SUBRESOURCE mappedResource;
-		hr = pDeviceContext->Map(pStagingTexture, 0, D3D11_MAP_READ, 0, &mappedResource);
-		if (FAILED(hr))
-		{
-			MessageBox(NULL, "Failed to map staging texture!", "Error", MB_OK);
-			pStagingTexture->Release();
-			return false;
-		}
-
-		// Allocate a buffer for the RGB frame. gmav_add copies the bytes into
-		// the file, so the same buffer can be reused for every frame.
-		const UINT width = desc.Width;
-		const UINT height = desc.Height;
-		const size_t frameSize = static_cast<size_t>(width) * height * 3; // 3 bytes per pixel (RGB)
-		static std::vector<BYTE> frameData{};
-		frameData.resize(frameSize);
-		BYTE* pFrameData = frameData.data();
-
-		// Convert the back buffer data (BGRA) to RGB (bottom first). Walk rows
-		// with pointers and honour RowPitch: a mapped row can be padded, which
-		// the old per-pixel index math silently ignored.
-		BYTE* pSource = static_cast<BYTE*>(mappedResource.pData);
-		const UINT srcPitch = mappedResource.RowPitch;
-		const size_t dstPitch = static_cast<size_t>(width) * 3;
-
-		for (UINT y = 0; y < height; y++)
-		{
-			const BYTE* src = pSource + static_cast<size_t>(height - 1 - y) * srcPitch;
-			BYTE* dst = pFrameData + static_cast<size_t>(y) * dstPitch;
-			for (UINT x = 0; x < width; x++, src += 4, dst += 3)
+			AsyncFrameJob job{};
 			{
-				dst[0] = src[2];  // R
-				dst[1] = src[1];  // G
-				dst[2] = src[0];  // B
+				unique_lock<mutex> lock(AsyncQueueMutex);
+				AsyncQueueReady.wait(lock, []() { return !AsyncQueue.empty() || AsyncWriterStop; });
+				if (AsyncQueue.empty())
+				{
+					if (AsyncWriterStop)
+						break;
+					continue;
+				}
+				job = std::move(AsyncQueue.front());
+				AsyncQueue.pop_front();
+			}
+			AsyncQueueSpace.notify_one();
+
+			if (job.Kind == AsyncFrameKind::Image)
+			{
+				if (FAILED(WicImage::EncodeToFile(job.Pixels.data(), job.Width, job.Height,
+					job.Container, job.Path.c_str())))
+				{
+					AsyncEncodeFailures++;
+				}
+			}
+			else
+			{
+				const size_t frameSize = static_cast<size_t>(job.Width) * job.Height * 3;
+				aviRgbBuffer.resize(frameSize);
+				BYTE* dstBase = aviRgbBuffer.data();
+				const BYTE* srcBase = job.Pixels.data();
+				const size_t srcPitch = static_cast<size_t>(job.Width) * 4;
+				const size_t dstPitch = static_cast<size_t>(job.Width) * 3;
+				for (UINT y = 0; y < job.Height; ++y)
+				{
+					const BYTE* src = srcBase + static_cast<size_t>(job.Height - 1 - y) * srcPitch;
+					BYTE* dst = dstBase + static_cast<size_t>(y) * dstPitch;
+					for (UINT x = 0; x < job.Width; ++x, src += 4, dst += 3)
+					{
+						dst[0] = src[2];
+						dst[1] = src[1];
+						dst[2] = src[0];
+					}
+				}
+				if (!gmav_add(job.Gmav, aviRgbBuffer.data()) && job.Gmav)
+					gmav_finish(job.Gmav);
 			}
 		}
+		CoUninitialize();
+		return 0;
+	}
 
-		// Unmap the staging texture
-		pDeviceContext->Unmap(pStagingTexture, 0);
-		pStagingTexture->Release();
-
-		if (!gmav_add(gmav, pFrameData))
+	static bool StartAsyncFrameWriter()
+	{
 		{
-			if(gmav != NULL)
-				gmav_finish(gmav);
-
+			lock_guard<mutex> lock(AsyncQueueMutex);
+			AsyncQueue.clear();
+			AsyncWriterStop = false;
 		}
+		AsyncEncodeFailures = 0;
+		AsyncWriterThread = CreateThread(nullptr, 0, &AsyncFrameWriterThread, nullptr, 0, nullptr);
+		if (!AsyncWriterThread)
+		{
+			T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "STREAMS", "Could not create the async frame writer thread.");
+			return false;
+		}
+		return true;
+	}
 
+	static void StopAsyncFrameWriter(bool discard)
+	{
+		if (!AsyncWriterThread)
+			return;
+		{
+			lock_guard<mutex> lock(AsyncQueueMutex);
+			if (discard)
+				AsyncQueue.clear();
+			AsyncWriterStop = true;
+		}
+		AsyncQueueReady.notify_all();
+		AsyncQueueSpace.notify_all();
+		WaitForSingleObject(AsyncWriterThread, INFINITE);
+		CloseHandle(AsyncWriterThread);
+		AsyncWriterThread = nullptr;
+		if (AsyncEncodeFailures > 0)
+			T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "STREAMS", "Failed to encode %i queued image(s).", AsyncEncodeFailures);
+	}
+
+	void* gmav = 0x00;
+#pragma region AviFile methods
+	// Capture the back buffer to CPU memory and hand it to the writer thread.
+	static bool CaptureBackBufferAndQueueAvi(ID3D11DeviceContext* context, ID3D11Texture2D* backBuffer)
+	{
+		D3D11_TEXTURE2D_DESC desc{};
+		backBuffer->GetDesc(&desc);
+
+		std::vector<uint8_t> pixels{};
+		if (FAILED(RawCapture::CaptureBGRA(context, backBuffer, pixels)) || pixels.empty())
+			return false;
+
+		AsyncFrameJob job{};
+		job.Kind = AsyncFrameKind::Avi;
+		job.Pixels = std::move(pixels);
+		job.Width = desc.Width;
+		job.Height = desc.Height;
+		job.Gmav = gmav;
+		EnqueueAsyncFrame(std::move(job));
 		return true;
 	}
 #pragma endregion
@@ -137,13 +214,13 @@ namespace Streams
 		deque<vector<uint8_t>> Queue{};
 		mutex QueueMutex{};
 		condition_variable QueueReady{};
+		condition_variable QueueSpace{};
 		HANDLE Thread = nullptr;
 		bool StopRequested = false;
 		bool WriteFailed = false;
 		int EncodeFailures = 0;
-		int DroppedFrames = 0;
 	};
-	static constexpr size_t MaxQueuedFrames = 512;
+	static constexpr size_t MaxQueuedFrames = 16;
 	inline static vector<unique_ptr<FFmpegPipeTarget>> PipeTargets{};
 	inline static FFmpegPipeTarget* CurrentPipeTarget = nullptr;
 
@@ -339,14 +416,16 @@ namespace Streams
 			{
 				ID3D11Texture2D* backBuffer;
 				HRESULT hr = p_swap_chain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<LPVOID*>(&backBuffer));
-				CaptureBackBufferAndWriteToAVI(p_context, p_device, backBuffer);
+				if (SUCCEEDED(hr) && backBuffer)
+					CaptureBackBufferAndQueueAvi(p_context, backBuffer);
 				ScreenshotRequested = false;
-				backBuffer->Release();
+				if (backBuffer)
+					backBuffer->Release();
 			}
 			else if (RecordingAsFFmpeg && CurrentPipeTarget)
 			{
-				// Encode straight to memory and hand the JPEG bytes to the writer
-				// thread. No frame files are created for FFmpeg recordings.
+				// Copy raw BGRA bytes to memory and hand them to the writer thread.
+				// FFmpeg encodes them directly; no WIC JPEG step or frame files.
 				ID3D11Texture2D* backBuffer = nullptr;
 				HRESULT hr = p_swap_chain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<LPVOID*>(&backBuffer));
 				if (SUCCEEDED(hr))
@@ -361,19 +440,22 @@ namespace Streams
 					if (texture_to_save)
 					{
 						p_context->CopyResource(texture_to_save, backBuffer);
-						vector<uint8_t> jpeg{};
-						if (SUCCEEDED(JpegCapture::Encode(p_context, texture_to_save, jpeg)) && !jpeg.empty())
+						vector<uint8_t> frame{};
+						if (SUCCEEDED(RawCapture::CaptureBGRA(p_context, texture_to_save, frame)) && !frame.empty())
 						{
 							FFmpegPipeTarget* target = CurrentPipeTarget;
-							lock_guard<mutex> lock(target->QueueMutex);
-							if (target->Queue.size() >= MaxQueuedFrames)
+							unique_lock<mutex> lock(target->QueueMutex);
+							// Backpressure: never drop frames, or the demo would run
+							// ahead of the encoded video. Raw frames are large, so the
+							// queue cap is small and the render thread waits for space.
+							target->QueueSpace.wait(lock, [target]() {
+								return target->Queue.size() < MaxQueuedFrames || target->StopRequested || target->WriteFailed;
+							});
+							if (!target->StopRequested && !target->WriteFailed)
 							{
-								// Bound memory if FFmpeg cannot keep up (slow codecs).
-								target->Queue.pop_front();
-								target->DroppedFrames++;
+								target->Queue.push_back(std::move(frame));
+								target->QueueReady.notify_one();
 							}
-							target->Queue.push_back(std::move(jpeg));
-							target->QueueReady.notify_one();
 						}
 						else
 						{
@@ -386,27 +468,46 @@ namespace Streams
 			}
 			else
 			{
-				//T6SDK::ConsoleLog::LogFormatted(CONSOLETEXTGREEN, "Screenshot requested!");
 				REFGUID GUID_ContainerFormatJpeg{ 0x19e4a5aa, 0x5662, 0x4fc5, 0xa0, 0xc0, 0x17, 0x58, 0x2, 0x8e, 0x10, 0x57 };
 				REFGUID GUID_ContainerFormatPng{ 0x1b7cfaf4, 0x713f, 0x473c, 0xbb, 0xcd, 0x61, 0x37, 0x42, 0x5f, 0xae, 0xaf };
 
-
-				ID3D11Texture2D* backBuffer;
+				ID3D11Texture2D* backBuffer = nullptr;
 				HRESULT hr = p_swap_chain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<LPVOID*>(&backBuffer));
-
-				if (texture_to_save == NULL)
+				if (SUCCEEDED(hr) && backBuffer)
 				{
-					D3D11_TEXTURE2D_DESC td;
-					backBuffer->GetDesc(&td);
-					p_device->CreateTexture2D(&td, NULL, &texture_to_save);
+					if (texture_to_save == NULL)
+					{
+						D3D11_TEXTURE2D_DESC td;
+						backBuffer->GetDesc(&td);
+						p_device->CreateTexture2D(&td, NULL, &texture_to_save);
+					}
+
+					if (texture_to_save)
+					{
+						p_context->CopyResource(texture_to_save, backBuffer);
+						std::vector<uint8_t> pixels{};
+						if (SUCCEEDED(RawCapture::CaptureBGRA(p_context, texture_to_save, pixels)) && !pixels.empty())
+						{
+							D3D11_TEXTURE2D_DESC td{};
+							texture_to_save->GetDesc(&td);
+							const bool useJpg = T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_JPG);
+							AsyncFrameJob job{};
+							job.Kind = AsyncFrameKind::Image;
+							job.Pixels = std::move(pixels);
+							job.Width = td.Width;
+							job.Height = td.Height;
+							job.Container = useJpg ? GUID_ContainerFormatJpeg : GUID_ContainerFormatPng;
+							job.Path = std::wstring(filename.begin(), filename.end());
+							EnqueueAsyncFrame(std::move(job));
+						}
+						else
+						{
+							T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "STREAMS", "Failed to capture frame %i for image sequence.", frameCount);
+						}
+					}
+					backBuffer->Release();
 				}
-
-				p_context->CopyResource(texture_to_save, backBuffer);
-
-				const bool useJpg = T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_JPG);
-				DirectX::SaveWICTextureToFile(p_context, texture_to_save, useJpg ? GUID_ContainerFormatJpeg : GUID_ContainerFormatPng, std::wstring(filename.begin(), filename.end()).c_str(), NULL, NULL, true);
 				ScreenshotRequested = false;
-				backBuffer->Release();
 			}
 		}
 
@@ -563,7 +664,8 @@ namespace Streams
 			sprintf(buffer, "%s\\%s_%i.%s", currentStream->Dir.c_str(), currentStream->Name, frameCount, formatBuffer);
 			filename = currentStream->Dir+ "\\" +currentStream->Name+"_"+std::to_string(frameCount)+"."+formatBuffer;
 		}
-		T6SDK::InternalFunctions::SCR_UpdateScreen(2);
+		// Pass state is already applied by Enable(), so one redraw with the
+		// screenshot flag set is enough; the old first redraw was captured over.
 		ScreenshotRequested = true;
 		T6SDK::InternalFunctions::SCR_UpdateScreen(2);
 	}
@@ -625,6 +727,7 @@ namespace Streams
 				frame = std::move(target->Queue.front());
 				target->Queue.pop_front();
 			}
+			target->QueueSpace.notify_one();
 			if (!FFmpeg::WriteFrame(target->Encoder, frame.data(), frame.size()))
 			{
 				lock_guard<mutex> lock(target->QueueMutex);
@@ -667,10 +770,6 @@ namespace Streams
 				anyFailed = true;
 				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "STREAMS", "FFmpeg stopped accepting frames for %s.", target->Encoder.OutputPath.c_str());
 			}
-			if (target->DroppedFrames > 0)
-			{
-				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_WARNING, false, "STREAMS", "Dropped %i frame(s) for %s (encoder could not keep up).", target->DroppedFrames, target->Encoder.OutputPath.c_str());
-			}
 			std::string error;
 			if (!FFmpeg::FinishPipeEncoder(target->Encoder, error))
 			{
@@ -700,6 +799,8 @@ namespace Streams
 		IsAnyOtherStream = false;
 		ReleaseCaptureTexture();
 		LocalAddresses::h_TickIncreasing.UnHook();
+		// Drain (or discard on abort) all queued frames before finalizing AVI files.
+		StopAsyncFrameWriter(abortingStreams);
 		IsStreamsRunning = false;
 
 		const int framesCaptured = frameCount;
@@ -736,6 +837,7 @@ namespace Streams
 					target->StopRequested = true;
 				}
 				target->QueueReady.notify_one();
+				target->QueueSpace.notify_all();
 			}
 
 			if (abortingStreams || framesCaptured <= 0)
@@ -907,6 +1009,8 @@ namespace Streams
 		encoder.Executable = Settings::Settings::FFmpegPath;
 		encoder.OutputPath = std::string(newStreamFolder) + "\\" + stream->Name + "." + FFmpeg::ContainerExtension(T6SDK::Dvars::GetInt(CustomDvars::dvar_ffmpeg_container));
 		encoder.FPS = T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_fps);
+		encoder.Width = T6SDK::Addresses::ScreenWidth.Value();
+		encoder.Height = T6SDK::Addresses::ScreenHeight.Value();
 		encoder.Settings.Codec = T6SDK::Dvars::GetInt(CustomDvars::dvar_ffmpeg_codec);
 		encoder.Settings.Quality = T6SDK::Dvars::GetInt(CustomDvars::dvar_ffmpeg_quality);
 		encoder.Settings.Preset = T6SDK::Dvars::GetInt(CustomDvars::dvar_ffmpeg_preset);
@@ -936,6 +1040,7 @@ namespace Streams
 				target->StopRequested = true;
 			}
 			target->QueueReady.notify_one();
+			target->QueueSpace.notify_all();
 		}
 		// Kill the child first: a blocked WriteFile is released when its pipe
 		// reader goes away, so the writer threads can then exit.
@@ -1081,6 +1186,13 @@ namespace Streams
 			sprintf(CameraFileBuffer, "%s\\%s_CameraData.t6cr", newStreamFolder, isPov ? "Pov" : "Cine");
 			string str(CameraFileBuffer);
 			ExportCameraFile.open(str, ios_base::out);
+		}
+
+		if (!RecordingAsFFmpeg && !StartAsyncFrameWriter())
+		{
+			T6SDK::Theater::Demo_Error("Recorder failed to start!", "Could not create the async frame writer thread.");
+			StopStreams();
+			return;
 		}
 
 		LocalAddresses::h_TickIncreasing.Hook(OnTickIncreasing);

@@ -135,13 +135,15 @@ namespace FFmpeg
 		return data;
 	}
 
-	// One live FFmpeg process reading an MJPEG stream from its stdin. Frames are
-	// written as they are captured, so no intermediate images touch the disk.
+	// One live FFmpeg process reading raw BGRA frames from its stdin. Raw pixels
+	// avoid the WIC JPEG encode on the render thread and FFmpeg's JPEG decode.
 	struct PipeEncoder
 	{
 		std::string Executable{};
 		std::string OutputPath{};
 		int FPS = 50;
+		UINT Width = 0;
+		UINT Height = 0;
 		VideoSettings Settings{};
 		HANDLE Process = nullptr;
 		HANDLE Stdin = nullptr;
@@ -154,6 +156,11 @@ namespace FFmpeg
 		if (encoder.Executable.empty() || encoder.OutputPath.empty())
 		{
 			error = "FFmpeg job is missing an executable or output path.";
+			return false;
+		}
+		if (encoder.Width == 0 || encoder.Height == 0)
+		{
+			error = "FFmpeg job is missing a frame size.";
 			return false;
 		}
 
@@ -189,7 +196,9 @@ namespace FFmpeg
 			Quote(encoder.Executable) +
 			" -hide_banner -loglevel error -y" +
 			" -thread_queue_size 1024" +
-			" -f mjpeg -framerate " + std::to_string(fps) +
+			" -f rawvideo -pixel_format bgra -video_size " +
+			std::to_string(encoder.Width) + "x" + std::to_string(encoder.Height) +
+			" -framerate " + std::to_string(fps) +
 			" -i pipe:0" +
 			" -an" + BuildVideoArgs(encoder.Settings) +
 			" -vf \"scale=trunc(iw/2)*2:trunc(ih/2)*2\"" +
