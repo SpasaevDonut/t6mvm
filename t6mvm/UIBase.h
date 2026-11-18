@@ -209,7 +209,9 @@ namespace UIBase
 
 				}
 			}
-			if (!Streams::ScreenshotRequested && !Streams::IsAnyOtherStream && Streams::IsStreamsRunning)
+			// Show progress while recording with any pass enabled. ScreenshotRequested
+			// is only set on the frame being captured, so the overlay stays out of the output.
+			if (!Streams::ScreenshotRequested && Streams::IsStreamsRunning)
 			{
 				Streams::ShowProgressOnScreen();
 			}
