@@ -69,26 +69,31 @@ namespace Streams
 			return false;
 		}
 
-		// Allocate a buffer for the RGB frame
+		// Allocate a buffer for the RGB frame. gmav_add copies the bytes into
+		// the file, so the same buffer can be reused for every frame.
 		const UINT width = desc.Width;
 		const UINT height = desc.Height;
-		const UINT frameSize = width * height * 3; // 3 bytes per pixel (RGB)
-		BYTE* pFrameData = new BYTE[frameSize];
+		const size_t frameSize = static_cast<size_t>(width) * height * 3; // 3 bytes per pixel (RGB)
+		static std::vector<BYTE> frameData{};
+		frameData.resize(frameSize);
+		BYTE* pFrameData = frameData.data();
 
-		// Convert the back buffer data (BGRA) to RGB (bottom first)
+		// Convert the back buffer data (BGRA) to RGB (bottom first). Walk rows
+		// with pointers and honour RowPitch: a mapped row can be padded, which
+		// the old per-pixel index math silently ignored.
 		BYTE* pSource = static_cast<BYTE*>(mappedResource.pData);
+		const UINT srcPitch = mappedResource.RowPitch;
+		const size_t dstPitch = static_cast<size_t>(width) * 3;
 
-		for (int y = 0; y < height; y++)
+		for (UINT y = 0; y < height; y++)
 		{
-			int src_y = height - 1 - y;  // Start from the bottom row
-			for (int x = 0; x < width; x++)
+			const BYTE* src = pSource + static_cast<size_t>(height - 1 - y) * srcPitch;
+			BYTE* dst = pFrameData + static_cast<size_t>(y) * dstPitch;
+			for (UINT x = 0; x < width; x++, src += 4, dst += 3)
 			{
-				int src_idx = (src_y * width + x) * 4;  // RGBA source index
-				int dst_idx = (y * width + x) * 3;      // RGB destination index
-
-				pFrameData[dst_idx + 0] = pSource[src_idx + 2];  // R
-				pFrameData[dst_idx + 1] = pSource[src_idx + 1];  // G
-				pFrameData[dst_idx + 2] = pSource[src_idx + 0];  // B
+				dst[0] = src[2];  // R
+				dst[1] = src[1];  // G
+				dst[2] = src[0];  // B
 			}
 		}
 
@@ -103,8 +108,6 @@ namespace Streams
 
 		}
 
-		// Clean up
-		delete[] pFrameData;
 		return true;
 	}
 #pragma endregion
@@ -191,6 +194,17 @@ namespace Streams
 
 
 	ID3D11Texture2D* texture_to_save = NULL;
+
+	// The capture texture is reused between frames; drop it when the swap chain
+	// changes size so the next capture recreates it with the new dimensions.
+	static void ReleaseCaptureTexture()
+	{
+		if (texture_to_save)
+		{
+			texture_to_save->Release();
+			texture_to_save = NULL;
+		}
+	}
 
 #pragma endregion
 #pragma region DX11 methods
@@ -365,8 +379,6 @@ namespace Streams
 						{
 							CurrentPipeTarget->EncodeFailures++;
 						}
-						texture_to_save->Release();
-						texture_to_save = NULL;
 					}
 					backBuffer->Release();
 				}
@@ -395,8 +407,6 @@ namespace Streams
 				DirectX::SaveWICTextureToFile(p_context, texture_to_save, useJpg ? GUID_ContainerFormatJpeg : GUID_ContainerFormatPng, std::wstring(filename.begin(), filename.end()).c_str(), NULL, NULL, true);
 				ScreenshotRequested = false;
 				backBuffer->Release();
-				texture_to_save->Release();
-				texture_to_save = NULL;
 			}
 		}
 
@@ -417,12 +427,14 @@ namespace Streams
 	{
 		T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_DEBUG, false, "STREAMS", "Resizing buffers to %ix%i", Width, Height);
 		IsAnyOtherStream = false;
+		ReleaseCaptureTexture();
 		return p_ResizeBuffers(pSwapChain, BufferCount, Width, Height, NewFormat, SwapChainFlags);
 	}
 
 	static long __stdcall detour_ResizeTarget(IDXGISwapChain* pSwapChain, const DXGI_MODE_DESC* pNewTargetParameters)
 	{
 		IsAnyOtherStream = false;
+		ReleaseCaptureTexture();
 		T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_DEBUG, false, "STREAMS", "Resizing target to %ix%i", pNewTargetParameters->Width, pNewTargetParameters->Height);
 		return p_ResizeTarget(pSwapChain, pNewTargetParameters);
 	}
@@ -523,7 +535,7 @@ namespace Streams
 					T6SDK::Addresses::DemoPlayback.Value()->FreeRoamCamera.Origin.x, T6SDK::Addresses::DemoPlayback.Value()->FreeRoamCamera.Origin.y, T6SDK::Addresses::DemoPlayback.Value()->FreeRoamCamera.Origin.z,
 					T6SDK::Addresses::DemoPlayback.Value()->FreeRoamCamera.Angles.x, T6SDK::Addresses::DemoPlayback.Value()->FreeRoamCamera.Angles.y, T6SDK::Addresses::DemoPlayback.Value()->FreeRoamCamera.Angles.z);
 			}
-			ExportCameraFile << exportStringline << endl;
+			ExportCameraFile << exportStringline << "\n";
 		}
 	}
 
@@ -686,6 +698,7 @@ namespace Streams
 		T6SDK::Addresses::IsDemoPaused.Value() = true;
 		ScreenshotRequested = false;
 		IsAnyOtherStream = false;
+		ReleaseCaptureTexture();
 		LocalAddresses::h_TickIncreasing.UnHook();
 		IsStreamsRunning = false;
 

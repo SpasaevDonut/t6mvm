@@ -61,13 +61,18 @@ namespace JpegCapture
 		if (FAILED(hr))
 			return hr;
 
-		Microsoft::WRL::ComPtr<IWICImagingFactory> factory;
-		hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
-			IID_PPV_ARGS(factory.GetAddressOf()));
-		if (FAILED(hr))
+		// This runs once per captured frame. Creating a WIC factory is expensive,
+		// so keep one for the lifetime of the process instead of per frame.
+		static Microsoft::WRL::ComPtr<IWICImagingFactory> factory;
+		if (!factory)
 		{
-			context->Unmap(staging.Get(), 0);
-			return hr;
+			hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+				IID_PPV_ARGS(factory.GetAddressOf()));
+			if (FAILED(hr))
+			{
+				context->Unmap(staging.Get(), 0);
+				return hr;
+			}
 		}
 
 		HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, 0);
