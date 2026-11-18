@@ -15,7 +15,7 @@ Here're some of the project's best features:
 *   Weapon camo & animations replacement
 *   Holdgun
 *   Custom sliders
-*   FFmpeg MP4 encoding (H.264)
+*   FFmpeg video encoding (H.264, H.265, ProRes, UtVideo, AV1, VP9)
 <p id="description"> </p>
 <h2>🛠️ Installation</h2>
 
@@ -34,7 +34,12 @@ Here're some of the project's best features:
 * Always check for errors in console
 * Please consider to skip back at least once when demo is loaded to avoid tick mismatches and let <b>timeline</b> and other components work properly.
 * In case your mouse scroll wheel is broken use <b>mvm_cameraRoll</b> and <b>mvm_cameraFov</b> commands during setting dolly camera markers.
-* To record MP4 files, select your <b>ffmpeg.exe</b> in the Streams tab and enable <b>FFMPEG MP4</b>. The FFmpeg build must include the <b>libx264</b> encoder. FFmpeg mode records temporary JPG frames, encodes them to H.264 MP4 after recording, and deletes the frames on success.
+* To encode video files, select your <b>ffmpeg.exe</b> in the Streams tab and enable <b>FFMPEG VIDEO</b>. The FFmpeg build must include the encoder for the codec you pick (default <b>libx264</b>). FFmpeg mode captures each frame, encodes it to JPEG in memory, and pipes it straight into a dedicated FFmpeg process per pass — no temporary image files are written to disk. Each pass encodes in parallel; if a codec cannot keep up, excess frames are dropped to bound memory.
+* The <b>FFMPEG</b> tab selects the codec (H.264, H.265, ProRes, UtVideo, AV1, VP9), quality (CRF), speed preset, pixel format, output container, faststart, and arbitrary extra arguments. Defaults reproduce the original H.264/CRF 18/veryfast/MP4 output. Choose a container compatible with your codec (e.g. WEBM for VP9); ProRes and UtVideo are lossless so quality/preset are ignored.
+* H.265 uses <b>CRF</b> too (FFmpeg's `-crf`), on the same 0–51 range, but the numbers are not equivalent to H.264: x265 defaults to 28 while x264 defaults to 23, and CRF 18 in H.265 is higher quality/larger than CRF 18 in H.264.
+* Use the <b>AUTO OPEN FOLDER</b> toggle in the Streams tab (also in the Settings menu) to stop Explorer from opening when a recording finishes.
+* If FFmpeg is still finalizing when recording stops, an <b>ENCODING IN PROGRESS</b> splash stays on screen until it is safe to record again.
+* The <b>MISC</b> tab has a <b>HIDE 2D</b> toggle that sets `cg_draw2D` to 0 — removes the HUD, blood splatter and other 2D overlays.
 
 <p id="description"> </p>
 
@@ -112,10 +117,22 @@ Here're some of the project's best features:
 | `mvm_streams_fps`             | int    | `50`     | `1000`    | `50`      | Recording FPS. |
 | `mvm_streams_JPG`             | bool   | -        | -         | `false`   | Record streams as JPG. |
 | `mvm_streams_avi`             | bool   | -        | -         | `false`   | Record streams as AVI. |
-| `mvm_streams_ffmpeg`          | bool   | -        | -         | `false`   | Encode recorded passes to H.264 MP4 with the FFmpeg executable selected in the Streams tab. |
+| `mvm_streams_ffmpeg`          | bool   | -        | -         | `false`   | Encode recorded passes with the FFmpeg executable selected in the Streams tab, using the codec/container from the FFMPEG tab (default H.264 MP4). |
 | `mvm_streams_tickStart`       | int    | `-1`     | `99999999`| `-1`      | Start tick for recording. |
 | `mvm_streams_tickEnd`         | int    | `-1`     | `99999999`| `-1`      | End tick for recording. |
 | `mvm_streams_recordCam`       | bool   | -        | -         | `false`   | Record camera data per frame. |
+
+## 🎞️ FFmpeg Dvars
+
+| Dvar Name                     | Type   | Min      | Max       | Default   | Description |
+|-------------------------------|--------|----------|-----------|-----------|-------------|
+| `mvm_ffmpeg_codec`            | int    | `0`      | `5`       | `0`       | Codec (`0=H.264/libx264`, `1=H.265/libx265`, `2=ProRes/prores_ks`, `3=UtVideo`, `4=AV1/libaom-av1`, `5=VP9/libvpx-vp9`). |
+| `mvm_ffmpeg_quality`          | int    | `0`      | `51`      | `18`      | Quality (CRF), integer only. Lower is better; ignored by ProRes/UtVideo. |
+| `mvm_ffmpeg_preset`           | int    | `0`      | `4`       | `1`       | Encoding speed (`0=ultrafast`, `1=veryfast`, `2=medium`, `3=slow`, `4=veryslow`); maps to CPU-used for AV1/VP9. |
+| `mvm_ffmpeg_pixelFormat`      | int    | `0`      | `4`       | `0`       | Pixel format (`0=yuv420p`, `1=yuv422p`, `2=yuv444p`, `3=yuv420p10le`, `4=yuv422p10le`). ProRes forces `yuv422p10le`. |
+| `mvm_ffmpeg_container`        | int    | `0`      | `4`       | `0`       | Output container (`0=MP4`, `1=MKV`, `2=MOV`, `3=WEBM`, `4=AVI`). |
+| `mvm_ffmpeg_faststart`        | bool   | -        | -         | `true`    | Move the MP4/MOV moov atom to the start for faster streaming. |
+| `mvm_ffmpeg_extraArgs`        | string | -        | -         | `""`      | Extra FFmpeg arguments appended before the output file. |
 
 ## 🔫 Weapon Dvars
 

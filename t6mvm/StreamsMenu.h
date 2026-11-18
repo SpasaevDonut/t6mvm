@@ -211,6 +211,7 @@ namespace StreamsMenu
 		UIControls::UI_StreamsFFmpegCheckBox.Draw(streamsEnabled);
 		UIControls::UI_StreamsNoFlashCheckBox.Draw(streamsEnabled);
 		UIControls::UI_RecordCamCheckBox.Draw(streamsEnabled);
+		UIControls::UI_StreamsAutoOpenFolderCheckBox.Draw();
 
 		static std::string ffmpegPathText;
 		if (Settings::Settings::FFmpegPath.empty())
@@ -243,6 +244,10 @@ namespace StreamsMenu
 	}
 	void OnTheaterControlsDrawn()
 	{
+		// The recording/encoding splashes own grid row 19; don't stack the
+		// "start recording" hint on top of them.
+		if (Streams::IsStreamsRunning || Streams::IsFFmpegEncoding)
+			return;
 		if (T6SDK::Dvars::GetBool(CustomDvars::dvar_streams) && !Settings::Settings::StreamsDirectory.empty())
 		{
 			int enabledStreamsCount = 0;
@@ -281,8 +286,8 @@ namespace StreamsMenu
 		UIControls::UI_StreamsAVICheckBox = T6SDK::Drawing::UI_CheckBoxButton("TYPE: IMAGE SEQUENCE", "TYPE: AVI", 4, 18, T6SDK::AnchorPoint::TopLeft, &CustomDvars::dvar_streams_avi->current.enabled, std::function<void(bool)>(OnAviModeChanged));
 		UIControls::UI_StreamsAVICheckBox.ToolTip = "^7Record as ^5IMAGE SEQUENCE ^7or ^5AVI ^7file.";
 
-		UIControls::UI_StreamsFFmpegCheckBox = T6SDK::Drawing::UI_CheckBoxButton("FFMPEG MP4 OFF", "FFMPEG MP4 ON", 4, 20, T6SDK::AnchorPoint::TopLeft, &CustomDvars::dvar_streams_ffmpeg->current.enabled, std::function<void(bool)>(OnFFmpegModeChanged));
-		UIControls::UI_StreamsFFmpegCheckBox.ToolTip = "^7Encode recorded frames to a compressed ^5H.264 MP4 ^7with FFmpeg. Requires ^3ffmpeg.exe ^7below.";
+		UIControls::UI_StreamsFFmpegCheckBox = T6SDK::Drawing::UI_CheckBoxButton("FFMPEG VIDEO OFF", "FFMPEG VIDEO ON", 4, 20, T6SDK::AnchorPoint::TopLeft, &CustomDvars::dvar_streams_ffmpeg->current.enabled, std::function<void(bool)>(OnFFmpegModeChanged));
+		UIControls::UI_StreamsFFmpegCheckBox.ToolTip = "^7Encode recorded frames with FFmpeg using the codec and container from the ^5FFMPEG ^7tab. Requires ^3ffmpeg.exe ^7below.";
 
 		UIControls::UI_StreamsFFmpegPathButton = T6SDK::Drawing::UI_ClickableButton("FFMPEG: NOT SET", 4, 32, T6SDK::AnchorPoint::TopLeft, (uintptr_t)&SelectFFmpegPath);
 		UIControls::UI_StreamsFFmpegPathButton.ToolTip = "Select ffmpeg.exe. FFmpeg must include the libx264 encoder.";
@@ -292,6 +297,13 @@ namespace StreamsMenu
 
 		UIControls::UI_RecordCamCheckBox = T6SDK::Drawing::UI_CheckBoxButton("RECORD CAMERA DATA\tOFF", "RECORD CAMERA DATA\tON", 4, 24, T6SDK::AnchorPoint::TopLeft, &CustomDvars::dvar_streams_recordCam->current.enabled, 0x00);
 		UIControls::UI_RecordCamCheckBox.ToolTip = "^7Get camera orientation and position data exported for each recorded frame.";
+
+		UIControls::UI_StreamsAutoOpenFolderCheckBox = T6SDK::Drawing::UI_CheckBoxButton("AUTO OPEN FOLDER OFF", "AUTO OPEN FOLDER ON", 4, 26, T6SDK::AnchorPoint::TopLeft, &Settings::Settings::OpenStreamsFolder_proxy, [](bool value)
+		{
+			std::string action("OpenStreamsFolder");
+			Settings::Settings::SetPostStreamsAction(action, value);
+		});
+		UIControls::UI_StreamsAutoOpenFolderCheckBox.ToolTip = "^7Open the recording folder automatically when a recording finishes. ^5Off ^7keeps you in the game.";
 
 		UIControls::UI_StreamsDirectoryButton = T6SDK::Drawing::UI_ClickableButton("Directory is not set", 4, 30, T6SDK::AnchorPoint::TopLeft, (uintptr_t)&SetStreamsDirectory);
 		UIControls::UI_StreamsDirectoryButton.ToolTip = "Select the directory where the streams will be saved.";

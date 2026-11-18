@@ -7,6 +7,7 @@
 #include "MiscMenu.h"
 #include "WeaponMenu.h"
 #include "StreamsMenu.h"
+#include "FFmpegMenu.h"
 #include "SunMenu.h"
 #include "SsaoMenu.h"
 #include "FogMenu.h"
@@ -36,6 +37,8 @@ namespace UIBase
 			result = T6SDK::InternalFunctions::SetClipboardText(SunMenu::GetCFG());
 		else if (*UIControls::StreamsTabButton.isChecked)
 			result = T6SDK::InternalFunctions::SetClipboardText(StreamsMenu::GetCFG());
+		else if (*UIControls::FFmpegTabButton.isChecked)
+			result = T6SDK::InternalFunctions::SetClipboardText(FFmpegMenu::GetCFG());
 		else if (*UIControls::WeaponTabButton.isChecked)
 			result = T6SDK::InternalFunctions::SetClipboardText(WeaponMenu::GetCFG());
 		if(!result)
@@ -100,6 +103,7 @@ namespace UIBase
 		}
 		Common::UI_BookmarkDialog.OnInputKey(keyCode);
 		CustomSlidersMenu::UI_CustomSliderDvarNameDialog.OnInputKey(keyCode);
+		UIControls::UI_FFmpegExtraArgsDialog.OnInputKey(keyCode);
 	}
 
 	void DrawUIGrid()
@@ -170,11 +174,12 @@ namespace UIBase
 					MiscMenu::Draw();
 					LightsMenu::Draw();
 					StreamsMenu::Draw();
+					FFmpegMenu::Draw();
 					WeaponMenu::Draw();
 					CustomSlidersMenu::Draw();
 					UIControls::MenuBlurCheckBox.Draw();
 					UIControls::CloseMenuButton.Draw();
-					if (*UIControls::MainCameraTabButton.isChecked || *UIControls::MiscTabButton.isChecked || *UIControls::SsaoTabButton.isChecked || *UIControls::FogTabButton.isChecked || *UIControls::DofTabButton.isChecked || *UIControls::SunSkyTabButton.isChecked || *UIControls::StreamsTabButton.isChecked || *UIControls::WeaponTabButton.isChecked)
+					if (*UIControls::MainCameraTabButton.isChecked || *UIControls::MiscTabButton.isChecked || *UIControls::SsaoTabButton.isChecked || *UIControls::FogTabButton.isChecked || *UIControls::DofTabButton.isChecked || *UIControls::SunSkyTabButton.isChecked || *UIControls::StreamsTabButton.isChecked || *UIControls::FFmpegTabButton.isChecked || *UIControls::WeaponTabButton.isChecked)
 						UIControls::AddToCFGButton.Draw();
 
 					if (*UIControls::MainTabButton.isChecked || *UIControls::BoneCameraTabButton.isChecked)
@@ -208,12 +213,15 @@ namespace UIBase
 			{
 				Streams::ShowProgressOnScreen();
 			}
+			if (Streams::IsFFmpegEncoding)
+				Streams::ShowEncodingProgressOnScreen();
 			if (CustomDvars::dvar_uiGridDebug->current.enabled)
 				DrawUIGrid();
 		}
 		Common::UI_BookmarkDialog.Draw();
 		DemoBrowserMenu::UI_DemoRenameDialog.Draw();
 		CustomSlidersMenu::UI_CustomSliderDvarNameDialog.Draw();
+		UIControls::UI_FFmpegExtraArgsDialog.Draw();
 		if (!T6SDK::Theater::IsInTheater() || (T6SDK::Input::BlankMenuOpened && *UIControls::MainTabButton.isChecked))
 		{
 			if (DemoBrowserMenu::isShown)
@@ -246,6 +254,7 @@ namespace UIBase
 		DofMenu::Init();
 		LightsMenu::Init();
 		StreamsMenu::Init();
+		FFmpegMenu::Init();
 		WeaponMenu::Init();
 		CustomSlidersMenu::Init();
 		WeaponAnimationChangerMenu::Init();

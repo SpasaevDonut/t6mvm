@@ -147,6 +147,9 @@
     <ClInclude Include="FFmpegEncoder.h">
       <Filter>Components\Streams</Filter>
     </ClInclude>
+    <ClInclude Include="JpegCapture.h">
+      <Filter>Components\Streams</Filter>
+    </ClInclude>
     <ClInclude Include="SafeDemo.h">
       <Filter>Components\Streams</Filter>
     </ClInclude>
@@ -163,6 +166,9 @@
       <Filter>Components\Theater\Weapon</Filter>
     </ClInclude>
     <ClInclude Include="StreamsMenu.h">
+      <Filter>Components\Theater\StreamsMenu</Filter>
+    </ClInclude>
+    <ClInclude Include="FFmpegMenu.h">
       <Filter>Components\Theater\StreamsMenu</Filter>
     </ClInclude>
     <ClInclude Include="Default.h">

@@ -15,6 +15,12 @@
 #include "LocalAddresses.h"
 #include "ScreenGrab.h"
 #include "FFmpegEncoder.h"
+#include "JpegCapture.h"
+#include <deque>
+#include <mutex>
+#include <condition_variable>
+#include <memory>
+#include <utility>
 #include <cassert>
 #include "..\MinHook\MinHook.h"
 #pragma comment(lib, "libMinHook.x86.lib")
@@ -119,6 +125,25 @@ namespace Streams
 	static string folderToDeleteWhenAborted = "";
 	inline static vector<IMVMStream*> FFmpegStreams{};
 
+	// One live FFmpeg process per enabled pass. Captured frames are queued and
+	// written to the process stdin by a worker thread so the Present path never
+	// waits on the encoder.
+	struct FFmpegPipeTarget
+	{
+		FFmpeg::PipeEncoder Encoder{};
+		deque<vector<uint8_t>> Queue{};
+		mutex QueueMutex{};
+		condition_variable QueueReady{};
+		HANDLE Thread = nullptr;
+		bool StopRequested = false;
+		bool WriteFailed = false;
+		int EncodeFailures = 0;
+		int DroppedFrames = 0;
+	};
+	static constexpr size_t MaxQueuedFrames = 512;
+	inline static vector<unique_ptr<FFmpegPipeTarget>> PipeTargets{};
+	inline static FFmpegPipeTarget* CurrentPipeTarget = nullptr;
+
 	inline static bool IsFFmpegMode()
 	{
 		return CustomDvars::dvar_streams_ffmpeg && CustomDvars::dvar_streams_ffmpeg->current.enabled;
@@ -217,6 +242,8 @@ namespace Streams
 			return;
 		if(!IsStreamsRunning)
 			return;
+		if (IsFFmpegEncoding)
+			return;
 		if (T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_tickStart) > -1 && T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_tickEnd) > -1)
 		{
 			int totalFrames = (T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_tickEnd) - T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_tickStart))/(1000 / T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_fps));
@@ -228,7 +255,7 @@ namespace Streams
 			T6SDK::Drawing::DrawTextAbsolute(buffer0, coords.x, coords.y, 1.5f, T6SDK::Drawing::WHITECOLOR, T6SDK::AnchorPoint::Center, 0x00);
 
 			char formatBuffer1[96];
-			sprintf(formatBuffer1, "%s", RecordingAsFFmpeg ? "Recording as ^3FFMPEG MP4 ^7(temporary ^3JPG ^7frames)" : RecordingAsAvi ? "Recording as ^3AVI" : T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_JPG) ? "Recording as ^3JPG ^7sequence" : "Recording as ^3PNG ^7sequence");
+			sprintf(formatBuffer1, "%s", RecordingAsFFmpeg ? "Recording as ^3FFMPEG ^7(piped frames)" : RecordingAsAvi ? "Recording as ^3AVI" : T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_JPG) ? "Recording as ^3JPG ^7sequence" : "Recording as ^3PNG ^7sequence");
 			
 			vec2_t coords2 = T6SDK::Drawing::GetGridCellCoords(8, 21);
 			T6SDK::Drawing::DrawTextAbsolute(formatBuffer1, coords2.x, coords2.y, 1.0f, T6SDK::Drawing::WHITECOLOR, T6SDK::AnchorPoint::Center, 0x00);
@@ -251,6 +278,18 @@ namespace Streams
 			sprintf(buffer3, "Press ^3%s ^7to stop. Press ^1%s ^7to abort recording and remove recorded files.", T6SDK::Input::GetKeyByCode(Settings::Settings::KeyBinds["StreamsStartStop"])->KeyName.c_str(), T6SDK::Input::GetKeyByCode(Settings::Settings::KeyBinds["StreamsAbort"])->KeyName.c_str());
 			T6SDK::Drawing::DrawTextAbsolute(buffer3, coords2.x, coords2.y, 1.0f, T6SDK::Drawing::WHITECOLOR, T6SDK::AnchorPoint::Center, 0x00);
 		}
+	}
+
+	static void ShowEncodingProgressOnScreen()
+	{
+		if (!IsFFmpegEncoding)
+			return;
+
+		vec2_t coords = T6SDK::Drawing::GetGridCellCoords(8, 19);
+		T6SDK::Drawing::DrawTextAbsolute("^3FFMPEG ENCODING IN PROGRESS", coords.x, coords.y, 1.5f, T6SDK::Drawing::WHITECOLOR, T6SDK::AnchorPoint::Center, 0x00);
+
+		vec2_t coords2 = T6SDK::Drawing::GetGridCellCoords(8, 21);
+		T6SDK::Drawing::DrawTextAbsolute("^7Encoding incomplete, please wait before starting another recording.", coords2.x, coords2.y, 1.0f, T6SDK::Drawing::WHITECOLOR, T6SDK::AnchorPoint::Center, 0x00);
 	}
 
 	long HRES;
@@ -290,6 +329,49 @@ namespace Streams
 				ScreenshotRequested = false;
 				backBuffer->Release();
 			}
+			else if (RecordingAsFFmpeg && CurrentPipeTarget)
+			{
+				// Encode straight to memory and hand the JPEG bytes to the writer
+				// thread. No frame files are created for FFmpeg recordings.
+				ID3D11Texture2D* backBuffer = nullptr;
+				HRESULT hr = p_swap_chain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<LPVOID*>(&backBuffer));
+				if (SUCCEEDED(hr))
+				{
+					if (texture_to_save == NULL)
+					{
+						D3D11_TEXTURE2D_DESC td;
+						backBuffer->GetDesc(&td);
+						p_device->CreateTexture2D(&td, NULL, &texture_to_save);
+					}
+
+					if (texture_to_save)
+					{
+						p_context->CopyResource(texture_to_save, backBuffer);
+						vector<uint8_t> jpeg{};
+						if (SUCCEEDED(JpegCapture::Encode(p_context, texture_to_save, jpeg)) && !jpeg.empty())
+						{
+							FFmpegPipeTarget* target = CurrentPipeTarget;
+							lock_guard<mutex> lock(target->QueueMutex);
+							if (target->Queue.size() >= MaxQueuedFrames)
+							{
+								// Bound memory if FFmpeg cannot keep up (slow codecs).
+								target->Queue.pop_front();
+								target->DroppedFrames++;
+							}
+							target->Queue.push_back(std::move(jpeg));
+							target->QueueReady.notify_one();
+						}
+						else
+						{
+							CurrentPipeTarget->EncodeFailures++;
+						}
+						texture_to_save->Release();
+						texture_to_save = NULL;
+					}
+					backBuffer->Release();
+				}
+				ScreenshotRequested = false;
+			}
 			else
 			{
 				//T6SDK::ConsoleLog::LogFormatted(CONSOLETEXTGREEN, "Screenshot requested!");
@@ -309,7 +391,7 @@ namespace Streams
 
 				p_context->CopyResource(texture_to_save, backBuffer);
 
-				const bool useJpg = RecordingAsFFmpeg || T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_JPG);
+				const bool useJpg = T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_JPG);
 				DirectX::SaveWICTextureToFile(p_context, texture_to_save, useJpg ? GUID_ContainerFormatJpeg : GUID_ContainerFormatPng, std::wstring(filename.begin(), filename.end()).c_str(), NULL, NULL, true);
 				ScreenshotRequested = false;
 				backBuffer->Release();
@@ -447,13 +529,28 @@ namespace Streams
 
 	void CaptureScreenshot(IMVMStream* currentStream)
 	{
-		char formatBuffer[32];
-		const bool useJpg = RecordingAsFFmpeg || T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_JPG);
-		sprintf(formatBuffer, "%s", useJpg ? "JPG" : "PNG");
-		char buffer[512];
-		sprintf(buffer, "%s\\%s_%i.%s", currentStream->Dir.c_str(), currentStream->Name, frameCount, formatBuffer);
-		filename = currentStream->Dir+ "\\" +currentStream->Name+"_"+std::to_string(frameCount)+"."+formatBuffer;
-		//T6SDK::ConsoleLog::LogFormatted(CONSOLETEXTYELLOW, "Capturing screenshot to: %s", filename);
+		CurrentPipeTarget = nullptr;
+		if (RecordingAsFFmpeg)
+		{
+			// PipeTargets is built in the same order as FFmpegStreams.
+			for (size_t i = 0; i < FFmpegStreams.size(); ++i)
+			{
+				if (FFmpegStreams[i] == currentStream)
+				{
+					CurrentPipeTarget = PipeTargets[i].get();
+					break;
+				}
+			}
+		}
+		else
+		{
+			char formatBuffer[32];
+			const bool useJpg = T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_JPG);
+			sprintf(formatBuffer, "%s", useJpg ? "JPG" : "PNG");
+			char buffer[512];
+			sprintf(buffer, "%s\\%s_%i.%s", currentStream->Dir.c_str(), currentStream->Name, frameCount, formatBuffer);
+			filename = currentStream->Dir+ "\\" +currentStream->Name+"_"+std::to_string(frameCount)+"."+formatBuffer;
+		}
 		T6SDK::InternalFunctions::SCR_UpdateScreen(2);
 		ScreenshotRequested = true;
 		T6SDK::InternalFunctions::SCR_UpdateScreen(2);
@@ -464,7 +561,7 @@ namespace Streams
 		if (abortingStreams == false)
 		{
 			if (FFmpegEncodeFailed)
-				WinToastHelper::send_toast_notification(L"T6MVM FFMPEG FAILED", L"Encoding failed. Temporary frames and the log were kept.");
+				WinToastHelper::send_toast_notification(L"T6MVM FFMPEG FAILED", L"Encoding failed. Check the .ffmpeg.log file next to the output.");
 			else
 				WinToastHelper::send_toast_notification(L"T6MVM STREAMS FINISHED", L"Recording Complete!");
 			if (Settings::Settings::PostStreamsActions["Notification"] == true && !Settings::Settings::AlertzyKey.empty())
@@ -498,23 +595,85 @@ namespace Streams
 			}
 		}
 	}
-	static DWORD WINAPI FinishFFmpegStreamsThread(LPVOID param)
+	static DWORD WINAPI FFmpegPipeWriterThread(LPVOID param)
 	{
-		auto* jobs = static_cast<std::vector<FFmpeg::EncodeJob>*>(param);
-		for (const auto& job : *jobs)
+		auto* target = static_cast<FFmpegPipeTarget*>(param);
+		for (;;)
 		{
-			std::string error;
-			if (FFmpeg::EncodeSequence(job, error))
+			vector<uint8_t> frame{};
 			{
-				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_SUCCESS, false, "STREAMS", "Encoded MP4: %s", job.OutputPath.c_str());
+				unique_lock<mutex> lock(target->QueueMutex);
+				target->QueueReady.wait(lock, [target]() { return !target->Queue.empty() || target->StopRequested; });
+				if (target->Queue.empty())
+				{
+					if (target->StopRequested)
+						break;
+					continue;
+				}
+				frame = std::move(target->Queue.front());
+				target->Queue.pop_front();
+			}
+			if (!FFmpeg::WriteFrame(target->Encoder, frame.data(), frame.size()))
+			{
+				lock_guard<mutex> lock(target->QueueMutex);
+				target->WriteFailed = true;
+				break;
+			}
+		}
+		return 0;
+	}
+
+	static void ClosePipeWriterThreads()
+	{
+		for (auto& targetPtr : PipeTargets)
+		{
+			FFmpegPipeTarget* target = targetPtr.get();
+			if (target->Thread)
+			{
+				WaitForSingleObject(target->Thread, INFINITE);
+				CloseHandle(target->Thread);
+				target->Thread = nullptr;
+			}
+		}
+	}
+
+	static DWORD WINAPI FinishFFmpegPipesThread(LPVOID)
+	{
+		// Drain the queues, then signal EOF to each process in parallel.
+		ClosePipeWriterThreads();
+		bool anyFailed = false;
+		for (auto& targetPtr : PipeTargets)
+		{
+			FFmpegPipeTarget* target = targetPtr.get();
+			if (target->EncodeFailures > 0)
+			{
+				anyFailed = true;
+				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "STREAMS", "FFmpeg failed to encode %i frame(s) for %s.", target->EncodeFailures, target->Encoder.OutputPath.c_str());
+			}
+			if (target->WriteFailed)
+			{
+				anyFailed = true;
+				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "STREAMS", "FFmpeg stopped accepting frames for %s.", target->Encoder.OutputPath.c_str());
+			}
+			if (target->DroppedFrames > 0)
+			{
+				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_WARNING, false, "STREAMS", "Dropped %i frame(s) for %s (encoder could not keep up).", target->DroppedFrames, target->Encoder.OutputPath.c_str());
+			}
+			std::string error;
+			if (!FFmpeg::FinishPipeEncoder(target->Encoder, error))
+			{
+				anyFailed = true;
+				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "STREAMS", "FFmpeg failed for %s: %s", target->Encoder.OutputPath.c_str(), error.c_str());
 			}
 			else
 			{
-				FFmpegEncodeFailed = true;
-				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "STREAMS", "FFmpeg failed for %s: %s", job.OutputPath.c_str(), error.c_str());
+				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_SUCCESS, false, "STREAMS", "Encoded video: %s", target->Encoder.OutputPath.c_str());
 			}
 		}
-		delete jobs;
+		PipeTargets.clear();
+		FFmpegStreams.clear();
+		if (anyFailed)
+			FFmpegEncodeFailed = true;
 		NotifyOnStreamsFinished();
 		IsFFmpegEncoding = false;
 		return 0;
@@ -550,49 +709,47 @@ namespace Streams
 			ExportCameraFile.close();
 		}
 
-		std::vector<FFmpeg::EncodeJob>* jobs = nullptr;
-		if (RecordingAsFFmpeg && !abortingStreams && framesCaptured > 0 && !FFmpegStreams.empty())
+		bool ffmpegFinalizingOnThread = false;
+		CurrentPipeTarget = nullptr;
+		if (RecordingAsFFmpeg && !PipeTargets.empty())
 		{
-			jobs = new std::vector<FFmpeg::EncodeJob>();
-			for (auto* stream : FFmpegStreams)
+			for (auto& targetPtr : PipeTargets)
 			{
-				if (!stream || stream->Dir.empty())
-					continue;
-
-				FFmpeg::EncodeJob job{};
-				job.Executable = Settings::Settings::FFmpegPath;
-				job.InputPattern = stream->Dir + "\\" + stream->Name + "_%d.JPG";
-				job.OutputPath = folderToDeleteWhenAborted + "\\" + stream->Name + ".mp4";
-				job.FrameDirectory = stream->Dir;
-				job.FPS = T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_fps);
-				jobs->push_back(job);
+				FFmpegPipeTarget* target = targetPtr.get();
+				{
+					lock_guard<mutex> lock(target->QueueMutex);
+					if (abortingStreams)
+						target->Queue.clear();
+					target->StopRequested = true;
+				}
+				target->QueueReady.notify_one();
 			}
-			if (jobs->empty())
-			{
-				delete jobs;
-				jobs = nullptr;
-			}
-		}
 
-		if (!abortingStreams && framesCaptured > 0)
-		{
-			if (jobs)
+			if (abortingStreams || framesCaptured <= 0)
 			{
-				IsFFmpegEncoding = true;
-				HANDLE thread = CreateThread(nullptr, 0, &FinishFFmpegStreamsThread, jobs, 0, nullptr);
-				if (thread)
-					CloseHandle(thread);
-				else
-					FinishFFmpegStreamsThread(jobs);
+				// Abort or an empty take: kill the processes and discard output.
+				// Killing the child first unblocks any pending pipe write.
+				for (auto& targetPtr : PipeTargets)
+					FFmpeg::AbortPipeEncoder(targetPtr->Encoder);
+				ClosePipeWriterThreads();
+				PipeTargets.clear();
 			}
 			else
 			{
-				CreateThread(nullptr, 0, (LPTHREAD_START_ROUTINE)NotifyOnStreamsFinished, nullptr, 0, nullptr);
+				// Finalizing (waiting for FFmpeg) happens off the game thread.
+				IsFFmpegEncoding = true;
+				ffmpegFinalizingOnThread = true;
+				HANDLE thread = CreateThread(nullptr, 0, &FinishFFmpegPipesThread, nullptr, 0, nullptr);
+				if (thread)
+					CloseHandle(thread);
+				else
+					FinishFFmpegPipesThread(nullptr);
 			}
 		}
-		else if (jobs)
+
+		if (!abortingStreams && framesCaptured > 0 && !ffmpegFinalizingOnThread)
 		{
-			delete jobs;
+			CreateThread(nullptr, 0, (LPTHREAD_START_ROUTINE)NotifyOnStreamsFinished, nullptr, 0, nullptr);
 		}
 
 		FFmpegStreams.clear();
@@ -731,6 +888,51 @@ namespace Streams
 		}
 	}
 
+	static bool AddFFmpegPipeTarget(IMVMStream* stream, std::string& error)
+	{
+		FFmpeg::PipeEncoder encoder{};
+		encoder.Executable = Settings::Settings::FFmpegPath;
+		encoder.OutputPath = std::string(newStreamFolder) + "\\" + stream->Name + "." + FFmpeg::ContainerExtension(T6SDK::Dvars::GetInt(CustomDvars::dvar_ffmpeg_container));
+		encoder.FPS = T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_fps);
+		encoder.Settings.Codec = T6SDK::Dvars::GetInt(CustomDvars::dvar_ffmpeg_codec);
+		encoder.Settings.Quality = T6SDK::Dvars::GetInt(CustomDvars::dvar_ffmpeg_quality);
+		encoder.Settings.Preset = T6SDK::Dvars::GetInt(CustomDvars::dvar_ffmpeg_preset);
+		encoder.Settings.PixelFormat = T6SDK::Dvars::GetInt(CustomDvars::dvar_ffmpeg_pixelFormat);
+		encoder.Settings.Container = T6SDK::Dvars::GetInt(CustomDvars::dvar_ffmpeg_container);
+		encoder.Settings.Faststart = T6SDK::Dvars::GetBool(CustomDvars::dvar_ffmpeg_faststart);
+		const char* extraArgs = T6SDK::Dvars::GetString(CustomDvars::dvar_ffmpeg_extraArgs);
+		if (extraArgs)
+			encoder.Settings.ExtraArgs = extraArgs;
+
+		if (!FFmpeg::StartPipeEncoder(encoder, error))
+			return false;
+
+		PipeTargets.push_back(make_unique<FFmpegPipeTarget>());
+		PipeTargets.back()->Encoder = std::move(encoder);
+		FFmpegStreams.push_back(stream);
+		return true;
+	}
+
+	static void CleanupFailedPipeTargets()
+	{
+		for (auto& targetPtr : PipeTargets)
+		{
+			FFmpegPipeTarget* target = targetPtr.get();
+			{
+				lock_guard<mutex> lock(target->QueueMutex);
+				target->StopRequested = true;
+			}
+			target->QueueReady.notify_one();
+		}
+		// Kill the child first: a blocked WriteFile is released when its pipe
+		// reader goes away, so the writer threads can then exit.
+		for (auto& targetPtr : PipeTargets)
+			FFmpeg::AbortPipeEncoder(targetPtr->Encoder);
+		ClosePipeWriterThreads();
+		PipeTargets.clear();
+		FFmpegStreams.clear();
+	}
+
 	inline static void StartStreams()
 	{
 		if (!T6SDK::Dvars::GetBool(CustomDvars::dvar_streams))
@@ -738,7 +940,7 @@ namespace Streams
 
 		if (IsFFmpegEncoding)
 		{
-			T6SDK::Theater::Demo_Error("FFmpeg is still encoding!", "Wait for the previous MP4 to finish before starting a new recording.");
+			T6SDK::Theater::Demo_Error("FFmpeg is still encoding!", "Wait for the previous video to finish before starting a new recording.");
 			return;
 		}
 
@@ -796,19 +998,16 @@ namespace Streams
 
 			if (RecordingAsFFmpeg)
 			{
-				char buffer[512];
-				sprintf(buffer, "%s\\%s", newStreamFolder, stream->Name);
-				if (!T6SDK::InternalFunctions::CreateNewDirectory(buffer))
+				std::string error;
+				if (!AddFFmpegPipeTarget(stream, error))
 				{
-					T6SDK::Theater::Demo_Error("Error occured!", "Failed to create a temporary frame directory for FFmpeg!");
-					T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "STREAMS", "Failed to create FFmpeg frame directory: %s", buffer);
-					FFmpegStreams.clear();
+					T6SDK::Theater::Demo_Error("FFmpeg failed to start!", error.c_str());
+					T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "STREAMS", "Failed to start FFmpeg for %s: %s", stream->Name, error.c_str());
+					CleanupFailedPipeTargets();
 					RecordingAsFFmpeg = false;
 					RecordingAsAvi = false;
 					return;
 				}
-				stream->Dir = buffer;
-				FFmpegStreams.push_back(stream);
 			}
 			else if (RecordingAsAvi)
 			{
@@ -830,19 +1029,36 @@ namespace Streams
 		//If every pass is disabled, Update() falls back to the Default stream.
 		if (RecordingAsFFmpeg && !anyEnabled)
 		{
-			char buffer[512];
-			sprintf(buffer, "%s\\%s", newStreamFolder, Default.Name);
-			if (!T6SDK::InternalFunctions::CreateNewDirectory(buffer))
+			std::string error;
+			if (!AddFFmpegPipeTarget(&Default, error))
 			{
-				T6SDK::Theater::Demo_Error("Error occured!", "Failed to create a temporary frame directory for FFmpeg!");
-				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "STREAMS", "Failed to create FFmpeg frame directory: %s", buffer);
-				FFmpegStreams.clear();
+				T6SDK::Theater::Demo_Error("FFmpeg failed to start!", error.c_str());
+				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "STREAMS", "Failed to start FFmpeg for %s: %s", Default.Name, error.c_str());
+				CleanupFailedPipeTargets();
 				RecordingAsFFmpeg = false;
 				RecordingAsAvi = false;
 				return;
 			}
-			Default.Dir = buffer;
-			FFmpegStreams.push_back(&Default);
+		}
+
+		// Start writer threads only after every target is in place, so the
+		// pointers handed to the threads stay valid.
+		if (RecordingAsFFmpeg)
+		{
+			for (auto& targetPtr : PipeTargets)
+			{
+				FFmpegPipeTarget* target = targetPtr.get();
+				target->Thread = CreateThread(nullptr, 0, &FFmpegPipeWriterThread, target, 0, nullptr);
+				if (!target->Thread)
+				{
+					T6SDK::Theater::Demo_Error("FFmpeg failed to start!", "Could not create the frame writer thread.");
+					T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "STREAMS", "Could not create FFmpeg frame writer thread.");
+					CleanupFailedPipeTargets();
+					RecordingAsFFmpeg = false;
+					RecordingAsAvi = false;
+					return;
+				}
+			}
 		}
 
 		if (T6SDK::Dvars::GetBool(CustomDvars::dvar_streams_recordCam))
