@@ -296,7 +296,8 @@ namespace StreamsMenu
 
 		UIControls::UI_StreamsAutoOpenFolderCheckBox = T6SDK::Drawing::UI_CheckBoxButton("AUTO OPEN FOLDER OFF", "AUTO OPEN FOLDER ON", 4, 26, T6SDK::AnchorPoint::TopLeft, &Settings::Settings::OpenStreamsFolder_proxy, [](bool value)
 		{
-			Settings::Settings::SetPostStreamsAction("OpenStreamsFolder", value);
+			std::string action("OpenStreamsFolder");
+			Settings::Settings::SetPostStreamsAction(action, value);
 		});
 		UIControls::UI_StreamsAutoOpenFolderCheckBox.ToolTip = "^7Open the recording folder automatically when a recording finishes. ^5Off ^7keeps you in the game.";
 
