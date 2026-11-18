@@ -255,8 +255,11 @@ namespace UIBase
 	}
 	void OnSunInited()
 	{
+		T6MVM_Trace::Write("OnDemoPlaybackInited start");
 		SunMenu::Init();
+		T6MVM_Trace::Write("SunMenu::Init done");
 		FogMenu::Init();
+		T6MVM_Trace::Write("FogMenu::Init done");
 	}
 	inline static void Init()
 	{

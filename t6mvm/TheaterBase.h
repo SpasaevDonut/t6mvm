@@ -10,6 +10,7 @@
 #include "Fog.h"
 #include "HoldGun.h"
 #include "Settings.h"
+#include "Trace.h"
 
 namespace TheaterBase
 {
@@ -62,6 +63,7 @@ namespace TheaterBase
 	}
 	void HandleGameModeChanged(int mode)
 	{
+		T6MVM_Trace::Write("HandleGameModeChanged mode %i", mode);
 		if (mode == 32) //theater
 		{
 			T6SDK::InternalFunctions::GrabRefDefViewAxisMatrix(false);

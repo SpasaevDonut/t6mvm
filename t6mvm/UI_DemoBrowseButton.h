@@ -2,6 +2,7 @@
 #include "StdInclude.h"
 #include <ocidl.h>
 #include "SafeDemo.h"
+#include "Trace.h"
 
 namespace UIDemoBrowseButtonNS
 {
@@ -127,7 +128,9 @@ namespace UIDemoBrowseButtonNS
 							{
 								T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_DEBUG, false, "DEMO", "BriefData obtained! GameMode: %s", Common::CurrentLoadedDemo.GameMode.c_str());
 							}
+							T6MVM_Trace::Write("UI_DemoBrowseButton LoadDemoFromFile begin %s", str.c_str());
 							T6SDK::DemoHandler::LoadDemoFromFile(str.c_str(), &Common::CurrentLoadedDemo);
+							T6MVM_Trace::Write("UI_DemoBrowseButton LoadDemoFromFile end");
 							Common::CustomBookmarks.clear();
 							if (Common::CurrentLoadedDemo.HasMetadata)
 							{

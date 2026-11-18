@@ -238,10 +238,13 @@ namespace DemoBrowserMenu
 	{
 		if (std::filesystem::exists(Common::LocalDemos[selectedDemoNumber].DemoPath.c_str()))
 		{
+			T6MVM_Trace::Write("playDemo path %s", Common::LocalDemos[selectedDemoNumber].DemoPath.c_str());
 			Close();
 			//TODO check for boundaries
 			Common::CurrentLoadedDemo.Clear();
+			T6MVM_Trace::Write("LoadDemoFromFile begin");
 			T6SDK::DemoHandler::LoadDemoFromFile(Common::LocalDemos[selectedDemoNumber].DemoPath.c_str(), &Common::CurrentLoadedDemo);
+			T6MVM_Trace::Write("LoadDemoFromFile end");
 			if (Common::CurrentLoadedDemo.HasMetadata)
 			{
 				T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_DEBUG, false, "DEMO", "Trying to add bookmark from metadata...");
