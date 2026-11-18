@@ -44,6 +44,9 @@ void Init()
 {
     T6SDK::MAIN::DEBUG = true;
     T6SDK::MAIN::PreInit();
+    // Install the Present hook at startup so the main-menu demo launcher can
+    // draw before OnGameLoaded (which only fires once a map is loaded).
+    Streams::initDX11();
     T6SDK::Events::RegisterListener(T6SDK::EventType::OnGameLoaded, (uintptr_t)&OnGameLoaded);
 }
 HANDLE hThread;
