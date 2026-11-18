@@ -178,7 +178,7 @@ namespace CustomDvars
 
 		//Register ffmpeg dvars
 		dvar_ffmpeg_codec = T6SDK::Dvars::RegisterInt("mvm_ffmpeg_codec", 0, 0, 5, "FFmpeg video codec (0=H.264, 1=H.265, 2=ProRes, 3=UtVideo, 4=AV1, 5=VP9).");
-		dvar_ffmpeg_quality = T6SDK::Dvars::RegisterFloat("mvm_ffmpeg_quality", 18.0f, 0.0f, 51.0f, "FFmpeg quality (CRF). Lower is better. Ignored by ProRes and UtVideo.");
+		dvar_ffmpeg_quality = T6SDK::Dvars::RegisterInt("mvm_ffmpeg_quality", 18, 0, 51, "FFmpeg quality (CRF). Lower is better. Ignored by ProRes and UtVideo.");
 		dvar_ffmpeg_preset = T6SDK::Dvars::RegisterInt("mvm_ffmpeg_preset", 1, 0, 4, "FFmpeg encoding speed preset (0=ultrafast, 4=veryslow).");
 		dvar_ffmpeg_pixelFormat = T6SDK::Dvars::RegisterInt("mvm_ffmpeg_pixelFormat", 0, 0, 4, "FFmpeg pixel format (0=yuv420p, 4=yuv422p10le).");
 		dvar_ffmpeg_container = T6SDK::Dvars::RegisterInt("mvm_ffmpeg_container", 0, 0, 4, "FFmpeg container (0=MP4, 1=MKV, 2=MOV, 3=WEBM, 4=AVI).");

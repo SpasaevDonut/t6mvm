@@ -881,7 +881,7 @@ namespace Streams
 		encoder.OutputPath = std::string(newStreamFolder) + "\\" + stream->Name + "." + FFmpeg::ContainerExtension(T6SDK::Dvars::GetInt(CustomDvars::dvar_ffmpeg_container));
 		encoder.FPS = T6SDK::Dvars::GetInt(CustomDvars::dvar_streams_fps);
 		encoder.Settings.Codec = T6SDK::Dvars::GetInt(CustomDvars::dvar_ffmpeg_codec);
-		encoder.Settings.Quality = T6SDK::Dvars::GetFloat(CustomDvars::dvar_ffmpeg_quality);
+		encoder.Settings.Quality = T6SDK::Dvars::GetInt(CustomDvars::dvar_ffmpeg_quality);
 		encoder.Settings.Preset = T6SDK::Dvars::GetInt(CustomDvars::dvar_ffmpeg_preset);
 		encoder.Settings.PixelFormat = T6SDK::Dvars::GetInt(CustomDvars::dvar_ffmpeg_pixelFormat);
 		encoder.Settings.Container = T6SDK::Dvars::GetInt(CustomDvars::dvar_ffmpeg_container);

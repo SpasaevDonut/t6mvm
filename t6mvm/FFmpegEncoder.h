@@ -19,7 +19,7 @@ namespace FFmpeg
 	struct VideoSettings
 	{
 		int Codec = FFMPEG_CODEC_H264;
-		float Quality = 18.0f;
+		int Quality = 18;
 		int Preset = 1;
 		int PixelFormat = 0;
 		int Container = 0;
@@ -57,7 +57,7 @@ namespace FFmpeg
 		const int codec = Clamp(settings.Codec, 0, 5);
 		const int preset = Clamp(settings.Preset, 0, 4);
 		const int pixelFormat = Clamp(settings.PixelFormat, 0, 4);
-		const int crf = Clamp((int)settings.Quality, 0, 51);
+		const int crf = Clamp(settings.Quality, 0, 51);
 
 		std::string args = " -c:v ";
 		args += encoders[codec];

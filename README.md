@@ -125,7 +125,7 @@ Here're some of the project's best features:
 | Dvar Name                     | Type   | Min      | Max       | Default   | Description |
 |-------------------------------|--------|----------|-----------|-----------|-------------|
 | `mvm_ffmpeg_codec`            | int    | `0`      | `5`       | `0`       | Codec (`0=H.264/libx264`, `1=H.265/libx265`, `2=ProRes/prores_ks`, `3=UtVideo`, `4=AV1/libaom-av1`, `5=VP9/libvpx-vp9`). |
-| `mvm_ffmpeg_quality`          | float  | `0.0`    | `51.0`    | `18.0`    | Quality (CRF). Lower is better; ignored by ProRes/UtVideo. |
+| `mvm_ffmpeg_quality`          | int    | `0`      | `51`      | `18`      | Quality (CRF), integer only. Lower is better; ignored by ProRes/UtVideo. |
 | `mvm_ffmpeg_preset`           | int    | `0`      | `4`       | `1`       | Encoding speed (`0=ultrafast`, `1=veryfast`, `2=medium`, `3=slow`, `4=veryslow`); maps to CPU-used for AV1/VP9. |
 | `mvm_ffmpeg_pixelFormat`      | int    | `0`      | `4`       | `0`       | Pixel format (`0=yuv420p`, `1=yuv422p`, `2=yuv444p`, `3=yuv420p10le`, `4=yuv422p10le`). ProRes forces `yuv422p10le`. |
 | `mvm_ffmpeg_container`        | int    | `0`      | `4`       | `0`       | Output container (`0=MP4`, `1=MKV`, `2=MOV`, `3=WEBM`, `4=AVI`). |
