@@ -126,15 +126,41 @@ extern "C" __declspec(dllexport) int SendMessageB()
     return 1;
 }
 
+static HMODULE selfModule = nullptr;
+static PVOID exceptionHandler = nullptr;
+
+static LONG CALLBACK TraceException(PEXCEPTION_POINTERS exceptionInfo)
+{
+    EXCEPTION_RECORD* record = exceptionInfo->ExceptionRecord;
+    if (record->ExceptionCode == 0xC0000005 || record->ExceptionCode == 0xC0000409 || record->ExceptionCode == 0xC00000FD)
+    {
+        uintptr_t address = (uintptr_t)record->ExceptionAddress;
+        uintptr_t self = (uintptr_t)selfModule;
+        uintptr_t game = (uintptr_t)GetModuleHandleA(nullptr);
+        T6MVM_Trace::Write("VEH code=%08X addr=%p self=%p selfOff=%p game=%p gameOff=%p",
+            record->ExceptionCode, record->ExceptionAddress, selfModule,
+            (void*)(address >= self ? address - self : 0), (void*)game,
+            (void*)(address >= game ? address - game : 0));
+        if (record->NumberParameters > 1)
+            T6MVM_Trace::Write("VEH access=%p address=%p", (void*)record->ExceptionInformation[0], (void*)record->ExceptionInformation[1]);
+        T6MVM_Trace::Write("VEH eip=%p esp=%p ebp=%p", (void*)exceptionInfo->ContextRecord->Eip, (void*)exceptionInfo->ContextRecord->Esp, (void*)exceptionInfo->ContextRecord->Ebp);
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved)
 {
     switch (ul_reason_for_call)
     {
     case DLL_PROCESS_ATTACH:
+        selfModule = hModule;
         T6MVM_Trace::Write("DllMain attach");
+        exceptionHandler = AddVectoredExceptionHandler(1, TraceException);
         break;
     case DLL_PROCESS_DETACH:
         T6MVM_Trace::Write("DllMain detach");
+        if (exceptionHandler)
+            RemoveVectoredExceptionHandler(exceptionHandler);
         if (initialized)
             T6SDK::MAIN::DeInitialize();
         break;
