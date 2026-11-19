@@ -197,9 +197,6 @@ namespace Streams
 	bool FreeBufferRequested = false;
 	string filename = "";
 	inline static bool IsStreamsRunning = false;
-	// The Present hook is installed at startup so the main-menu launcher can
-	// draw before OnGameLoaded (which only fires once a map loads).
-	inline static bool StreamsInitDone = false;
 	inline static bool RecordingAsFFmpeg = false;
 	inline static bool RecordingAsAvi = false;
 	inline static bool IsFFmpegEncoding = false;
@@ -417,17 +414,6 @@ namespace Streams
 			else
 				HRES = p_present(p_swap_chain, sync_interval, flags);
 		}
-		// Before OnGameLoaded the stream dvars are not registered yet, so GetBool
-		// below would dereference a null pointer. Present normally and only draw
-		// the main-menu launcher at that stage.
-		if (!StreamsInitDone)
-		{
-			HRES = p_present(p_swap_chain, sync_interval, flags);
-			if (p_device && p_context && sd.OutputWindow)
-				MainMenuLauncher::Draw(sd.OutputWindow);
-			return HRES;
-		}
-
 		// Skip the real Present only on the frame being captured, so that frame
 		// stays in the backbuffer. Other frames are presented: this is what makes
 		// the progress overlay visible and stops it from leaking into captures.
@@ -555,9 +541,9 @@ namespace Streams
 				HRES = p_present(p_swap_chain, sync_interval, flags);
 		}
 
-		// After OnGameLoaded, draw the launcher whenever we are not in theater or
-		// capturing (it is drawn in the early-return path before initialization).
-		if (!CaptureCycleActive && !T6SDK::Theater::IsInTheater() && p_device && p_context && sd.OutputWindow)
+		// The launcher is drawn here because T6SDK suppresses its own UI outside
+		// theater. Keep it out of the way of the recording capture path.
+		if (!CaptureCycleActive && !T6SDK::Theater::IsInTheater() && p_device && p_context)
 			MainMenuLauncher::Draw(sd.OutputWindow);
 
 		return HRES;
@@ -580,9 +566,6 @@ namespace Streams
 
 	bool initDX11()
 	{
-		static bool installed = false;
-		if (installed)
-			return true;
 		if (!get_present_pointer())
 		{
 			T6SDK::ConsoleLog::LogTagged(T6SDK::ConsoleLog::C_ERROR, false, "STREAMS", "Failed to get present pointer");
@@ -650,7 +633,6 @@ namespace Streams
 			return false;
 		}
 
-		installed = true;
 		return true;
 	}
 #pragma endregion
@@ -1414,7 +1396,6 @@ namespace Streams
 		T6SDK::Dvars::Cmd_AddCommandInternal("mvm_streams_start", StartStreams, &cmd_streams_start_VAR);
 		T6SDK::Dvars::Cmd_AddCommandInternal("mvm_streams_stop", StopStreams, &cmd_streams_stop_VAR);
 		T6SDK::Dvars::Cmd_AddCommandInternal("mvm_streams_abort", AbortStreams, &cmd_streams_abort_VAR);
-		StreamsInitDone = true;
 	}
 #pragma endregion
 }
