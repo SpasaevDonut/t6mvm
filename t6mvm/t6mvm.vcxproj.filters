@@ -150,9 +150,6 @@
     <ClInclude Include="JpegCapture.h">
       <Filter>Components\Streams</Filter>
     </ClInclude>
-    <ClInclude Include="MainMenuLauncher.h">
-      <Filter>Components\Streams</Filter>
-    </ClInclude>
     <ClInclude Include="SafeDemo.h">
       <Filter>Components\Streams</Filter>
     </ClInclude>

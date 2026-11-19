@@ -294,7 +294,6 @@
     <ClInclude Include="Lights.h" />
     <ClInclude Include="LightsMenu.h" />
     <ClInclude Include="MainMenu.h" />
-    <ClInclude Include="MainMenuLauncher.h" />
     <ClInclude Include="Misc.h" />
     <ClInclude Include="MiscMenu.h" />
     <ClInclude Include="NoGun.h" />

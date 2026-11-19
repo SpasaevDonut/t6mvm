@@ -16,7 +16,6 @@
 #include "ScreenGrab.h"
 #include "FFmpegEncoder.h"
 #include "JpegCapture.h"
-#include "MainMenuLauncher.h"
 #include <deque>
 #include <mutex>
 #include <condition_variable>
@@ -540,11 +539,6 @@ namespace Streams
 			if (!skipPresentForCapture)
 				HRES = p_present(p_swap_chain, sync_interval, flags);
 		}
-
-		// The launcher is drawn here because T6SDK suppresses its own UI outside
-		// theater. Keep it out of the way of the recording capture path.
-		if (!CaptureCycleActive && !T6SDK::Theater::IsInTheater() && p_device && p_context)
-			MainMenuLauncher::Draw(sd.OutputWindow);
 
 		return HRES;
 	}
